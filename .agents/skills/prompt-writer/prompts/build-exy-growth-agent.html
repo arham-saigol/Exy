@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Build Exy Growth Agent</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #121b27;
+      --surface: #202731;
+      --surface-raised: #252d38;
+      --border: #3b4654;
+      --border-focus: #6686a3;
+      --text: #c9cdd3;
+      --heading: #d9dadd;
+      --muted: #8f969f;
+      --accent: #6fa6cf;
+      --selection: rgba(111, 166, 207, 0.26);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-width: 320px;
+      background: var(--page);
+    }
+
+    body {
+      min-height: 100dvh;
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    ::selection {
+      background: var(--selection);
+    }
+
+    .shell {
+      width: min(100% - 40px, 920px);
+      margin: 0 auto;
+      padding: clamp(56px, 10vh, 96px) 0 64px;
+    }
+
+    .page-header {
+      max-width: 760px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0;
+      padding-bottom: 0.08em;
+      color: var(--heading);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-style: italic;
+      font-weight: 400;
+      letter-spacing: -0.035em;
+      line-height: 1.12;
+      text-wrap: balance;
+    }
+
+    .prompt-card {
+      margin-top: clamp(38px, 6vw, 54px);
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .prompt-card:focus-within {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px rgba(111, 166, 207, 0.1);
+    }
+
+    .card-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 54px;
+      padding: 8px 9px 8px 18px;
+      background: var(--surface-raised);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-label {
+      color: var(--muted);
+      font: 700 0.72rem/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .copy-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      min-height: 36px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
+    }
+
+    .copy-button:hover {
+      background: #2a3440;
+      border-color: #526273;
+      color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .copy-button:active {
+      transform: translateY(0);
+    }
+
+    .copy-button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .copy-button[data-state="copied"] {
+      background: #293744;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .copy-button svg {
+      width: 17px;
+      height: 17px;
+      flex: none;
+    }
+
+    .icon-check,
+    .copy-button[data-state="copied"] .icon-copy {
+      display: none;
+    }
+
+    .copy-button[data-state="copied"] .icon-check {
+      display: block;
+    }
+
+    .prompt-input {
+      display: block;
+      width: 100%;
+      min-height: 260px;
+      margin: 0;
+      padding: clamp(26px, 4vw, 38px);
+      overflow: hidden;
+      resize: none;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font: 550 clamp(0.9rem, 1.45vw, 0.98rem)/1.72 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      tab-size: 2;
+      caret-color: var(--accent);
+    }
+
+    .prompt-input::placeholder {
+      color: #747d88;
+    }
+
+    .hint {
+      margin: 14px 2px 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 560px) {
+      .shell {
+        width: min(100% - 24px, 920px);
+        padding-top: 40px;
+      }
+
+      .card-bar {
+        padding-left: 16px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="page-header">
+      <h1>Build Exy Growth Agent</h1>
+    </header>
+
+    <section class="prompt-card" aria-labelledby="prompt-label">
+      <header class="card-bar">
+        <span class="card-label" id="prompt-label">Prompt</span>
+        <button class="copy-button" id="copy-button" type="button" aria-label="Copy prompt">
+          <svg class="icon-copy" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter">
+            <rect x="8" y="8" width="11" height="11"></rect>
+            <path d="M16 8V5H5v11h3"></path>
+          </svg>
+          <svg class="icon-check" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="square" stroke-linejoin="miter">
+            <path d="m5 12 4 4L19 6"></path>
+          </svg>
+        </button>
+      </header>
+
+      <label class="sr-only" for="prompt-input">Editable prompt</label>
+      <textarea class="prompt-input" id="prompt-input" spellcheck="true">Build Exy, a self-hosted specialist agent for X/Twitter growth. Deliver a working implementation that runs on an Ubuntu VPS, plus installation and operating documentation.
+
+Inspect the repository before coding. State any assumptions and flag choices that would change product behavior, especially whether Exy may publish without confirmation. Prefer the smallest implementation that satisfies these requirements.
+
+Core behavior
+
+- Use the Pi SDK as the agent runtime.
+- Let users authenticate with their ChatGPT Plus or Pro subscription through Pi’s supported OpenAI Codex OAuth flow.
+- Support the authentication method that works on a headless Ubuntu VPS. Use device-code login if Pi supports it. Do not invent or maintain a custom authentication flow.
+- After authentication, query Pi for the models available to that account instead of hard-coding model names.
+- Let the user choose a default model and one of the reasoning levels supported by that model.
+- Persist model and reasoning choices across restarts.
+- Use Supermemory.ai for long-term memory. Store and retrieve the user’s voice, preferences, X strategy, prior conversations, and relevant task history. Memory must survive restarts and keep data isolated by user and connected X account.
+- Use Xquik to search X and find posts worth replying to.
+- Use Zernio to publish replies, publish original posts, and retrieve account and post analytics.
+- Use Exa for web search and page fetching.
+- Keep integration code behind focused tools so Exy can reason about when to search, fetch, draft, publish, or inspect analytics.
+- Never claim that a post or reply succeeded unless the provider confirms it. Return useful provider errors without exposing secrets.
+
+Reply verifier
+
+Create a persistent verifier for reply recommendations.
+
+- Every path that presents an X post as a reply opportunity must pass that post through the verifier first.
+- Canonicalize the post URL or extract its X post ID so alternate URLs cannot bypass the check.
+- Store a post only when Exy presents it to the user as a recommendation, not when it appears in raw search results.
+- If Exy recommended the post before, do not present it as a new opportunity. Tell the agent that it was already recommended.
+- Persist verifier records across restarts.
+- Add tests proving that duplicate URLs, alternate URL forms, and process restarts cannot cause duplicate recommendations.
+- The verifier applies to reply opportunities, not original-post drafts.
+
+Discord
+
+Run Exy through a Discord bot with proper thread handling.
+
+- When the authorized user mentions Exy in a configured parent channel, create a thread from that message and continue the conversation inside the thread.
+- Messages sent inside an existing Exy thread must continue that conversation instead of creating another thread.
+- Restrict control to the configured Discord user and intended guild/channel.
+- Preserve separate conversation state for separate threads.
+- Register these slash commands:
+  - `/model`: show available models and change the active model.
+  - `/reasoning`: show reasoning levels valid for the selected model and change the default.
+  - `/restart`: restart the Exy gateway.
+- Add other Discord commands only when the implementation needs them. Keep the command surface small.
+- Make publishing consequences clear in Discord. If the repository contains no existing approval policy, default to explicit confirmation immediately before Exy publishes a reply or original post.
+
+CLI and VPS operation
+
+Provide an `exy` CLI with:
+
+- `exy setup`
+- `exy start`
+- `exy stop`
+- `exy restart`
+- `exy status`
+- `exy logs`
+- `exy doctor`
+- `exy help`
+
+`exy setup` must run an idempotent setup wizard suitable for a fresh Ubuntu VPS. It should:
+
+- Detect and install missing runtime dependencies.
+- Configure the long-running gateway using the Ubuntu service mechanism selected for the project.
+- Ask for the Discord bot token, application/client ID, guild ID, parent channel ID, and authorized user ID, plus any other Discord value the implementation requires.
+- Ask for Supermemory, Xquik, Zernio, and Exa API keys.
+- Ask for a GitHub token only if the selected skill-installation method or private repository access requires one.
+- Guide the user through any Zernio connected-account selection required to identify the user’s X account.
+- Start Pi’s supported ChatGPT subscription login flow.
+- After login, list the models available to the account.
+- After model selection, list only the reasoning levels supported by that model.
+- Validate credentials where each provider offers a safe validation endpoint.
+- Store secrets outside the repository with restrictive filesystem permissions.
+- Allow the user to rerun setup without destroying valid configuration.
+- Finish with a clear success report and the command needed to start Exy.
+
+`exy doctor` must check configuration, dependency availability, service state, writable data paths, Pi authentication, and provider connectivity without printing secrets. The lifecycle and log commands must work without requiring the user to know the underlying service manager.
+
+Heartbeat and scheduled work
+
+Give Exy a `HEARTBEAT.md` file and the ability to maintain scheduled work.
+
+Research the current authoritative documentation for the `HEARTBEAT.md` convention before implementing it. Do not assume the supplied attribution to OpenAI is correct. Define the behavior from current documentation and cite the source in the project documentation.
+
+- Exy must run heartbeat checks at a configured interval and read `HEARTBEAT.md` for the work it should consider during each check.
+- Exy must be able to create, inspect, update, and remove its own scheduled jobs.
+- Keep heartbeat and cron-management instructions out of the main system prompt.
+- Create an agent skill that teaches Exy how heartbeat execution works, how to edit `HEARTBEAT.md`, and how to manage scheduled jobs safely.
+- Keep the default `HEARTBEAT.md` short.
+- Prevent duplicate concurrent runs of the same scheduled task and record enough execution history to diagnose failures.
+
+Agent Skills
+
+Support the open Agent Skills format and discover skills from the project’s `.agents/skills` directory.
+
+Research the current Agent Skills specification and skills.sh CLI before choosing the installation path. Use the simplest compatible option:
+
+- If skills.sh can install into Exy’s `.agents/skills` directory, document and support that workflow.
+- Otherwise, add one small CLI command that installs a skill from a GitHub repository into that directory.
+
+Validate the installed skill structure and make newly installed skills available without requiring source changes. Do not build a separate skill format.
+
+System prompt
+
+Keep Exy’s main system prompt lean. It should define Exy’s X-growth role, tool boundaries, publishing rules, memory use, and communication style. Put procedural material such as heartbeat and cron management in skills.
+
+Research before implementation
+
+Use current official or primary documentation for Pi, Supermemory, Xquik, Zernio, Exa, Discord, Agent Skills, and skills.sh. Confirm the exact package names, authentication capabilities, API operations, rate limits, and supported model/reasoning metadata. Do not hard-code examples such as `GPT-5.6-4` unless Pi returns that exact model ID for the authenticated account.
+
+Completion criteria
+
+- A fresh supported Ubuntu environment can run `exy setup` and start the gateway.
+- The Discord mention-to-thread flow works, and thread conversations remain isolated.
+- Model and reasoning changes work from setup and Discord and survive restarts.
+- Exy can search Xquik for reply opportunities without recommending the same post twice.
+- Exy can draft and, after the required confirmation, publish replies and original posts through Zernio.
+- Exy can retrieve Zernio analytics.
+- Exy can search and fetch web information through Exa.
+- Supermemory retains and retrieves relevant user context across restarts.
+- Heartbeats, scheduled jobs, and `.agents/skills` discovery work as documented.
+- Automated tests cover the verifier, configuration persistence, supported model/reasoning selection, and Discord thread routing.
+- Provide a safe mocked or dry-run test path for publishing so tests never post to a real X account.
+- Document installation, provider setup, Discord configuration, skill installation, operations, data locations, and troubleshooting.</textarea>
+    </section>
+
+    <p class="hint">Edit the prompt, then copy it.</p>
+    <p class="sr-only" id="copy-status" role="status" aria-live="polite"></p>
+  </main>
+
+  <script>
+    const promptInput = document.querySelector('#prompt-input');
+    const copyButton = document.querySelector('#copy-button');
+    const copyStatus = document.querySelector('#copy-status');
+    let resetTimer;
+
+    function fitPrompt() {
+      promptInput.style.height = 'auto';
+      promptInput.style.height = `${Math.max(promptInput.scrollHeight, 260)}px`;
+    }
+
+    async function copyPrompt() {
+      try {
+        await navigator.clipboard.writeText(promptInput.value);
+      } catch {
+        promptInput.select();
+        document.execCommand('copy');
+        promptInput.setSelectionRange(promptInput.value.length, promptInput.value.length);
+      }
+
+      window.clearTimeout(resetTimer);
+      copyButton.dataset.state = 'copied';
+      copyButton.setAttribute('aria-label', 'Prompt copied');
+      copyStatus.textContent = 'Prompt copied to clipboard.';
+
+      resetTimer = window.setTimeout(() => {
+        delete copyButton.dataset.state;
+        copyButton.setAttribute('aria-label', 'Copy prompt');
+        copyStatus.textContent = '';
+      }, 1800);
+    }
+
+    promptInput.addEventListener('input', fitPrompt);
+    copyButton.addEventListener('click', copyPrompt);
+    window.addEventListener('resize', fitPrompt);
+    fitPrompt();
+  </script>
+</body>
+</html>

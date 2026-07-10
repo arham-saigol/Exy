@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>{{TITLE}}</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #121b27;
+      --surface: #202731;
+      --surface-raised: #252d38;
+      --border: #3b4654;
+      --border-focus: #6686a3;
+      --text: #c9cdd3;
+      --heading: #d9dadd;
+      --muted: #8f969f;
+      --accent: #6fa6cf;
+      --selection: rgba(111, 166, 207, 0.26);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-width: 320px;
+      background: var(--page);
+    }
+
+    body {
+      min-height: 100dvh;
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    ::selection {
+      background: var(--selection);
+    }
+
+    .shell {
+      width: min(100% - 40px, 920px);
+      margin: 0 auto;
+      padding: clamp(56px, 10vh, 96px) 0 64px;
+    }
+
+    .page-header {
+      max-width: 760px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0;
+      padding-bottom: 0.08em;
+      color: var(--heading);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-style: italic;
+      font-weight: 400;
+      letter-spacing: -0.035em;
+      line-height: 1.12;
+      text-wrap: balance;
+    }
+
+    .prompt-card {
+      margin-top: clamp(38px, 6vw, 54px);
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .prompt-card:focus-within {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px rgba(111, 166, 207, 0.1);
+    }
+
+    .card-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 54px;
+      padding: 8px 9px 8px 18px;
+      background: var(--surface-raised);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-label {
+      color: var(--muted);
+      font: 700 0.72rem/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .copy-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      min-height: 36px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
+    }
+
+    .copy-button:hover {
+      background: #2a3440;
+      border-color: #526273;
+      color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .copy-button:active {
+      transform: translateY(0);
+    }
+
+    .copy-button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .copy-button[data-state="copied"] {
+      background: #293744;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .copy-button svg {
+      width: 17px;
+      height: 17px;
+      flex: none;
+    }
+
+    .icon-check,
+    .copy-button[data-state="copied"] .icon-copy {
+      display: none;
+    }
+
+    .copy-button[data-state="copied"] .icon-check {
+      display: block;
+    }
+
+    .prompt-input {
+      display: block;
+      width: 100%;
+      min-height: 260px;
+      margin: 0;
+      padding: clamp(26px, 4vw, 38px);
+      overflow: hidden;
+      resize: none;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font: 550 clamp(0.9rem, 1.45vw, 0.98rem)/1.72 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      tab-size: 2;
+      caret-color: var(--accent);
+    }
+
+    .prompt-input::placeholder {
+      color: #747d88;
+    }
+
+    .hint {
+      margin: 14px 2px 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 560px) {
+      .shell {
+        width: min(100% - 24px, 920px);
+        padding-top: 40px;
+      }
+
+      .card-bar {
+        padding-left: 16px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="page-header">
+      <h1>{{HEADING}}</h1>
+    </header>
+
+    <section class="prompt-card" aria-labelledby="prompt-label">
+      <header class="card-bar">
+        <span class="card-label" id="prompt-label">Prompt</span>
+        <button class="copy-button" id="copy-button" type="button" aria-label="Copy prompt">
+          <svg class="icon-copy" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter">
+            <rect x="8" y="8" width="11" height="11"></rect>
+            <path d="M16 8V5H5v11h3"></path>
+          </svg>
+          <svg class="icon-check" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="square" stroke-linejoin="miter">
+            <path d="m5 12 4 4L19 6"></path>
+          </svg>
+        </button>
+      </header>
+
+      <label class="sr-only" for="prompt-input">Editable prompt</label>
+      <textarea class="prompt-input" id="prompt-input" spellcheck="true">{{PROMPT}}</textarea>
+    </section>
+
+    <p class="hint">Edit the prompt, then copy it.</p>
+    <p class="sr-only" id="copy-status" role="status" aria-live="polite"></p>
+  </main>
+
+  <script>
+    const promptInput = document.querySelector('#prompt-input');
+    const copyButton = document.querySelector('#copy-button');
+    const copyStatus = document.querySelector('#copy-status');
+    let resetTimer;
+
+    function fitPrompt() {
+      promptInput.style.height = 'auto';
+      promptInput.style.height = `${Math.max(promptInput.scrollHeight, 260)}px`;
+    }
+
+    async function copyPrompt() {
+      try {
+        await navigator.clipboard.writeText(promptInput.value);
+      } catch {
+        promptInput.select();
+        document.execCommand('copy');
+        promptInput.setSelectionRange(promptInput.value.length, promptInput.value.length);
+      }
+
+      window.clearTimeout(resetTimer);
+      copyButton.dataset.state = 'copied';
+      copyButton.setAttribute('aria-label', 'Prompt copied');
+      copyStatus.textContent = 'Prompt copied to clipboard.';
+
+      resetTimer = window.setTimeout(() => {
+        delete copyButton.dataset.state;
+        copyButton.setAttribute('aria-label', 'Copy prompt');
+        copyStatus.textContent = '';
+      }, 1800);
+    }
+
+    promptInput.addEventListener('input', fitPrompt);
+    copyButton.addEventListener('click', copyPrompt);
+    window.addEventListener('resize', fitPrompt);
+    fitPrompt();
+  </script>
+</body>
+</html>
