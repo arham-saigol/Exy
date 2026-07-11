@@ -38,7 +38,7 @@ export interface ListAccountsInput {
 export interface ListAccountsResponse {
   accounts: ZernioAccount[];
   hasAnalyticsAccess?: boolean;
-  pagination?: unknown;
+  pagination?: { page?: number; limit?: number; total?: number; pages?: number };
 }
 
 export interface ZernioAccountHealth {
@@ -151,6 +151,23 @@ export interface ZernioPostResponse {
   message?: string;
 }
 
+export interface ListPostsInput {
+  accountId: string;
+  page?: number;
+  limit?: number;
+  source?: "zernio" | "external";
+  status?: "draft" | "scheduled" | "published" | "failed";
+  dateFrom?: string;
+  dateTo?: string;
+  search?: string;
+  sortBy?: "scheduled-desc" | "scheduled-asc" | "created-desc" | "created-asc" | "status" | "platform";
+}
+
+export interface ListPostsResponse {
+  posts: ZernioPost[];
+  pagination?: { page?: number; limit?: number; total?: number; pages?: number };
+}
+
 export interface GetAnalyticsInput {
   postId?: string;
   platform?: "twitter";
@@ -255,7 +272,7 @@ export class ZernioClient {
     this.#createRequestId = options.createRequestId ?? randomUUID;
   }
 
-  async listAccounts(input: ListAccountsInput = {}): Promise<ListAccountsResponse> {
+  async listAccounts(input: ListAccountsInput = {}, signal?: AbortSignal): Promise<ListAccountsResponse> {
     const response = await this.#http.request<ListAccountsResponse>({
       path: "accounts",
       query: compactQuery({
@@ -264,14 +281,16 @@ export class ZernioClient {
         page: input.page ?? 1,
         limit: input.limit ?? 100,
       }),
+      ...(signal === undefined ? {} : { signal }),
     });
     return response.data;
   }
 
-  async getAccountHealth(accountId: string): Promise<ZernioAccountHealth> {
+  async getAccountHealth(accountId: string, signal?: AbortSignal): Promise<ZernioAccountHealth> {
     assertNonEmpty("accountId", accountId);
     const response = await this.#http.request<ZernioAccountHealth>({
       path: `accounts/${encodeURIComponent(accountId)}/health`,
+      ...(signal === undefined ? {} : { signal }),
     });
     return response.data;
   }
@@ -310,6 +329,27 @@ export class ZernioClient {
     assertNonEmpty("postId", postId);
     const response = await this.#http.request<ZernioPostResponse>({
       path: `posts/${encodeURIComponent(postId)}`,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    return response.data;
+  }
+
+  async listPosts(input: ListPostsInput, signal?: AbortSignal): Promise<ListPostsResponse> {
+    assertNonEmpty("accountId", input.accountId);
+    const response = await this.#http.request<ListPostsResponse>({
+      path: "posts",
+      query: compactQuery({
+        accountId: input.accountId,
+        platform: "twitter",
+        page: input.page ?? 1,
+        limit: input.limit ?? 20,
+        source: input.source ?? "zernio",
+        status: input.status,
+        dateFrom: input.dateFrom,
+        dateTo: input.dateTo,
+        search: input.search,
+        sortBy: input.sortBy ?? "created-desc",
+      }),
       ...(signal === undefined ? {} : { signal }),
     });
     return response.data;

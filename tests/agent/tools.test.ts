@@ -54,7 +54,6 @@ function dependencies(options: { dryRun?: boolean; analytics?: boolean; zernioFe
       approvals,
       xAccountLabel: "@configured",
       stageReplyOpportunity,
-      analyticsEnabled: options.analytics ?? false,
       dryRunPublishing: options.dryRun ?? false,
     }),
   };
@@ -90,9 +89,76 @@ describe("focused Exy tools", () => {
     expect(deps.approvals.get(prepared.approval.id)?.state).toBe("consumed");
   });
 
-  it("exposes analytics only after setup consent", () => {
-    expect(dependencies().tools.some((tool) => tool.name === "inspect_x_analytics")).toBe(false);
-    expect(dependencies({ analytics: true }).tools.some((tool) => tool.name === "inspect_x_analytics")).toBe(true);
+  it.each([false, true])("exposes and scopes Zernio account tools when analytics sync is %s", async (analytics) => {
+    const requests: URL[] = [];
+    const configuredAccountId = "x-account";
+    const deps = dependencies({
+      analytics,
+      zernioFetch: async (input) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url);
+        requests.push(url);
+        if (url.pathname.endsWith("/accounts")) {
+          return new Response(JSON.stringify({
+            accounts: [
+              { _id: "another-account", platform: "twitter", username: "@another" },
+              { _id: configuredAccountId, platform: "twitter", username: "@configured" },
+            ],
+            hasAnalyticsAccess: analytics,
+          }), { status: 200 });
+        }
+        if (url.pathname.endsWith(`/accounts/${configuredAccountId}/health`)) {
+          return new Response(JSON.stringify({ accountId: configuredAccountId, status: "healthy" }), { status: 200 });
+        }
+        if (url.pathname.endsWith("/analytics")) {
+          return new Response(JSON.stringify({ posts: [], pagination: { page: 2, pages: 2 } }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ posts: [], pagination: { page: 3, pages: 4 } }), { status: 200 });
+      },
+    });
+    const names = deps.tools.map((tool) => tool.name);
+    expect(names).toEqual(expect.arrayContaining(["inspect_x_account", "inspect_x_analytics", "list_x_post_history"]));
+
+    const accountResult = toolJson(await deps.tools.find((tool) => tool.name === "inspect_x_account")!
+      .execute("account", {} as never, undefined, undefined, undefined as never));
+    await deps.tools.find((tool) => tool.name === "inspect_x_analytics")!
+      .execute("analytics", { mode: "posts", page: 2, limit: 25 } as never, undefined, undefined, undefined as never);
+    await deps.tools.find((tool) => tool.name === "inspect_x_analytics")!
+      .execute("followers", {
+        mode: "followers",
+        fromDate: "2026-06-01",
+        toDate: "2026-07-01",
+      } as never, undefined, undefined, undefined as never);
+    await deps.tools.find((tool) => tool.name === "list_x_post_history")!
+      .execute("posts", { page: 3, limit: 15, source: "external" } as never, undefined, undefined, undefined as never);
+
+    const accountRequest = requests.find((url) => url.pathname.endsWith("/accounts"))!;
+    const healthRequest = requests.find((url) => url.pathname.endsWith("/health"))!;
+    const analyticsRequest = requests.find((url) => url.pathname.endsWith("/analytics"))!;
+    const followersRequest = requests.find((url) => url.pathname.endsWith("/follower-stats"))!;
+    const postsRequest = requests.find((url) => url.pathname.endsWith("/posts"))!;
+    expect(accountResult).toMatchObject({ account: { _id: configuredAccountId } });
+    expect(JSON.stringify(accountResult)).not.toContain("another-account");
+    expect(accountRequest.searchParams.get("platform")).toBe("twitter");
+    expect(healthRequest.pathname).toContain(`/accounts/${configuredAccountId}/health`);
+    expect(analyticsRequest.searchParams.get("accountId")).toBe(configuredAccountId);
+    expect(analyticsRequest.searchParams.get("page")).toBe("2");
+    expect(followersRequest.searchParams.get("accountIds")).toBe(configuredAccountId);
+    expect(postsRequest.searchParams.get("accountId")).toBe(configuredAccountId);
+    expect(postsRequest.searchParams.get("page")).toBe("3");
+    expect(postsRequest.searchParams.get("source")).toBe("external");
+  });
+
+  it("does not expose another Zernio account when the configured account is unavailable", async () => {
+    const deps = dependencies({
+      zernioFetch: async () => new Response(JSON.stringify({
+        accounts: [{ _id: "another-account", platform: "twitter" }],
+        pagination: { page: 1, pages: 1 },
+      }), { status: 200 }),
+    });
+    const tool = deps.tools.find((candidate) => candidate.name === "inspect_x_account")!;
+
+    await expect(tool.execute("account", {} as never, undefined, undefined, undefined as never))
+      .rejects.toThrow("configured X account is not available");
   });
 
   it("marks an original-post draft without touching the reply verifier", async () => {

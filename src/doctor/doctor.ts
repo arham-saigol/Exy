@@ -139,7 +139,7 @@ export async function runDoctor(paths: ExyPaths): Promise<boolean> {
   if (config && secrets) {
     results.push(...(await checkAllProviders(config, secrets)).map(providerResult));
     if (!config.providers.zernioXAnalyticsEnabled) {
-      results.push({ name: "Zernio X analytics", status: "warn", detail: "disabled by setup consent; analytics tools are unavailable" });
+      results.push({ name: "Zernio X analytics sync", status: "warn", detail: "disabled by setup preference; read-only account and analytics tools remain available" });
     }
   }
 

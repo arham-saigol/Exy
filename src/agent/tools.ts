@@ -29,7 +29,6 @@ export interface ExyToolDependencies {
   }): StageReplyOpportunityResult;
   approvals: PublicationApprovalRepository;
   xAccountLabel: string;
-  analyticsEnabled: boolean;
   dryRunPublishing?: boolean;
   extraTools?: readonly ToolDefinition[];
 }
@@ -363,6 +362,34 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
     },
   });
 
+  const account = defineTool({
+    name: "inspect_x_account",
+    label: "Inspect X account",
+    description: "Retrieve details and connection health for the configured X account through Zernio.",
+    parameters: Type.Object({}),
+    execute: async (_id, _input, signal) => {
+      let page = 1;
+      let configured: Awaited<ReturnType<ZernioClient["listAccounts"]>>["accounts"][number] | undefined;
+      let hasAnalyticsAccess: boolean | undefined;
+      while (!configured) {
+        const listing = await deps.zernio.listAccounts({
+          platform: "twitter",
+          status: "connected",
+          page,
+          limit: 100,
+        }, signal);
+        hasAnalyticsAccess = listing.hasAnalyticsAccess;
+        configured = listing.accounts.find((candidate) => candidate._id === deps.scope.xAccountId);
+        const lastPage = listing.pagination?.pages;
+        if (configured || (lastPage === undefined ? listing.accounts.length < 100 : page >= lastPage)) break;
+        page += 1;
+      }
+      if (!configured) throw new Error("The configured X account is not available to the authenticated Zernio user");
+      const health = await deps.zernio.getAccountHealth(deps.scope.xAccountId, signal);
+      return text({ account: configured, health, hasAnalyticsAccess });
+    },
+  });
+
   const analytics = defineTool({
     name: "inspect_x_analytics",
     label: "Inspect X analytics",
@@ -372,6 +399,23 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
       postId: Type.Optional(Type.String()),
       fromDate: Type.Optional(Type.String({ description: "YYYY-MM-DD" })),
       toDate: Type.Optional(Type.String({ description: "YYYY-MM-DD" })),
+      page: Type.Optional(Type.Integer({ minimum: 1 })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+      sortBy: Type.Optional(Type.Union([
+        Type.Literal("date"),
+        Type.Literal("engagement"),
+        Type.Literal("impressions"),
+        Type.Literal("reach"),
+        Type.Literal("likes"),
+        Type.Literal("comments"),
+        Type.Literal("shares"),
+        Type.Literal("saves"),
+        Type.Literal("clicks"),
+        Type.Literal("views"),
+        Type.Literal("follows"),
+      ])),
+      order: Type.Optional(Type.Union([Type.Literal("asc"), Type.Literal("desc")])),
+      granularity: Type.Optional(Type.Union([Type.Literal("daily"), Type.Literal("weekly"), Type.Literal("monthly")])),
     }),
     execute: async (_id, input, signal) => {
       if (input.mode === "followers") {
@@ -381,6 +425,7 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
             accountIds: [deps.scope.xAccountId],
             fromDate: input.fromDate,
             toDate: input.toDate,
+            ...(input.granularity ? { granularity: input.granularity } : {}),
           }, signal),
         );
       }
@@ -391,9 +436,52 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
           ...(input.postId ? { postId: input.postId } : {}),
           ...(input.fromDate ? { fromDate: input.fromDate } : {}),
           ...(input.toDate ? { toDate: input.toDate } : {}),
+          page: input.page ?? 1,
+          limit: input.limit ?? 50,
+          ...(input.sortBy ? { sortBy: input.sortBy } : {}),
+          order: input.order ?? "desc",
         }, signal),
       );
     },
+  });
+
+  const postHistory = defineTool({
+    name: "list_x_post_history",
+    label: "List X post history",
+    description: "List a page of past posts for the configured X account through Zernio, including Zernio-authored or externally synced posts.",
+    parameters: Type.Object({
+      page: Type.Optional(Type.Integer({ minimum: 1 })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+      source: Type.Optional(Type.Union([Type.Literal("zernio"), Type.Literal("external")])),
+      status: Type.Optional(Type.Union([
+        Type.Literal("draft"),
+        Type.Literal("scheduled"),
+        Type.Literal("published"),
+        Type.Literal("failed"),
+      ])),
+      dateFrom: Type.Optional(Type.String({ description: "YYYY-MM-DD" })),
+      dateTo: Type.Optional(Type.String({ description: "YYYY-MM-DD" })),
+      search: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
+      sortBy: Type.Optional(Type.Union([
+        Type.Literal("scheduled-desc"),
+        Type.Literal("scheduled-asc"),
+        Type.Literal("created-desc"),
+        Type.Literal("created-asc"),
+        Type.Literal("status"),
+        Type.Literal("platform"),
+      ])),
+    }),
+    execute: async (_id, input, signal) => text(await deps.zernio.listPosts({
+      accountId: deps.scope.xAccountId,
+      page: input.page ?? 1,
+      limit: input.limit ?? 20,
+      source: input.source ?? "zernio",
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.dateFrom ? { dateFrom: input.dateFrom } : {}),
+      ...(input.dateTo ? { dateTo: input.dateTo } : {}),
+      ...(input.search ? { search: input.search } : {}),
+      sortBy: input.sortBy ?? "created-desc",
+    }, signal)),
   });
 
   const inspectPublicationStatus = defineTool({
@@ -429,7 +517,9 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
     preparePublication,
     publishApproved,
     inspectPublicationStatus,
-    ...(deps.analyticsEnabled ? [analytics] : []),
+    account,
+    analytics,
+    postHistory,
     ...(deps.extraTools ?? []),
   ];
 }
