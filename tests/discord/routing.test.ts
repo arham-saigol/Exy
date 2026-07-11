@@ -6,8 +6,6 @@ import {
 } from "../../src/discord/routing.js";
 
 const config = {
-  guildId: "guild-1",
-  parentChannelId: "parent-1",
   authorizedUserId: "user-1",
 };
 
@@ -38,7 +36,6 @@ function threadMessage(
     messageId: "message-2",
     channelId: "thread-1",
     channelKind: "thread",
-    threadParentId: "parent-1",
     mentionsBot: false,
     threadRegistered: true,
     ...overrides,
@@ -46,10 +43,16 @@ function threadMessage(
 }
 
 describe("decideDiscordMessageRoute", () => {
-  it("rejects a message from the wrong guild", () => {
+  it("accepts the authorized user from any guild", () => {
     expect(
       decideDiscordMessageRoute(config, parentMessage({ guildId: "guild-2" })),
-    ).toEqual({ action: "ignore", reason: "wrong_guild" });
+    ).toEqual({ action: "create_thread", starterMessageId: "message-1" });
+  });
+
+  it("rejects direct messages", () => {
+    expect(
+      decideDiscordMessageRoute(config, parentMessage({ guildId: undefined })),
+    ).toEqual({ action: "ignore", reason: "direct_message" });
   });
 
   it("rejects a message from the wrong user", () => {
@@ -58,20 +61,13 @@ describe("decideDiscordMessageRoute", () => {
     ).toEqual({ action: "ignore", reason: "wrong_user" });
   });
 
-  it("rejects a message in an unrelated channel", () => {
+  it("accepts mentions in any projected guild text channel", () => {
     expect(
       decideDiscordMessageRoute(
         config,
         parentMessage({ channelId: "parent-2" }),
       ),
-    ).toEqual({ action: "ignore", reason: "wrong_channel" });
-
-    expect(
-      decideDiscordMessageRoute(
-        config,
-        threadMessage({ threadParentId: "parent-2" }),
-      ),
-    ).toEqual({ action: "ignore", reason: "wrong_channel" });
+    ).toEqual({ action: "create_thread", starterMessageId: "message-1" });
   });
 
   it("creates a thread for an authorized parent-channel mention", () => {

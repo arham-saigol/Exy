@@ -1,4 +1,5 @@
 import {
+  ChannelType,
   Client,
   Events,
   GatewayIntentBits,
@@ -164,10 +165,7 @@ export class DiscordGateway {
       await this.registerCommands();
       await this.recoverCreatingThreads();
       this.state = "running";
-      this.logger.info("Discord gateway started", {
-        guildId: this.options.config.guildId,
-        parentChannelId: this.options.config.parentChannelId,
-      });
+      this.logger.info("Discord gateway started");
     } catch (error: unknown) {
       this.state = "stopped";
       this.detachListeners();
@@ -233,12 +231,13 @@ export class DiscordGateway {
     }
 
     const rest = new REST({ version: "10" }).setToken(this.options.botToken);
-    await rest.put(
-      Routes.applicationGuildCommands(
-        this.options.config.applicationId,
-        this.options.config.guildId,
+    await Promise.all(
+      [...this.client.guilds.cache.keys()].map((guildId) =>
+        rest.put(
+          Routes.applicationGuildCommands(this.options.config.applicationId, guildId),
+          { body: commands },
+        ),
       ),
-      { body: commands },
     );
   }
 
@@ -247,17 +246,19 @@ export class DiscordGateway {
       return;
     }
 
-    const channelKind =
-      message.channelId === this.options.config.parentChannelId
+    const channelKind = message.channel.isThread()
+      ? "thread"
+      : message.guildId !== null && (
+          message.channel.type === ChannelType.GuildText
+          || message.channel.type === ChannelType.GuildAnnouncement
+        )
         ? "parent"
-        : message.channel.isThread()
-          ? "thread"
-          : "other";
+        : "other";
 
     const mayInspectState =
       !message.author.bot &&
       (message.type === MessageType.Default || message.type === MessageType.Reply) &&
-      message.guildId === this.options.config.guildId &&
+      message.guildId !== null &&
       message.author.id === this.options.config.authorizedUserId;
     let registration =
       mayInspectState && (channelKind === "parent" || channelKind === "thread")
@@ -288,18 +289,11 @@ export class DiscordGateway {
     }
     const botId = this.client.user?.id;
     const guildPart = message.guildId === null ? {} : { guildId: message.guildId };
-    const parentPart =
-      channelKind === "thread" &&
-      message.channel.isThread() &&
-      message.channel.parentId !== null
-        ? { threadParentId: message.channel.parentId }
-        : {};
     const routingMessage: DiscordRoutingMessage = {
       messageId: message.id,
       ...guildPart,
       channelId: message.channelId,
       channelKind,
-      ...parentPart,
       authorId: message.author.id,
       authorIsBot: message.author.bot,
       isUserMessage:
@@ -314,7 +308,8 @@ export class DiscordGateway {
       threadRegistered:
         channelKind === "thread" &&
         registration?.status === "active" &&
-        this.registrationMatchesConfig(registration),
+        message.channel.isThread() &&
+        this.registrationMatchesThread(registration, message.channel),
     };
     const decision = decideDiscordMessageRoute(this.options.config, routingMessage);
 
@@ -337,12 +332,13 @@ export class DiscordGateway {
   }
 
   private async createThreadAndRun(message: Message): Promise<void> {
+    if (message.guildId === null || message.channel.isThread()) return;
     const now = new Date();
     const claim: DiscordThreadClaim = {
       threadId: message.id,
       starterMessageId: message.id,
-      guildId: this.options.config.guildId,
-      parentChannelId: this.options.config.parentChannelId,
+      guildId: message.guildId,
+      parentChannelId: message.channelId,
       authorizedUserId: this.options.config.authorizedUserId,
       claimedAt: now.toISOString(),
     };
@@ -396,8 +392,8 @@ export class DiscordGateway {
       const candidate = await this.client.channels.fetch(message.id).catch(() => null);
       if (
         candidate?.isThread() === true &&
-        candidate.guildId === this.options.config.guildId &&
-        candidate.parentId === this.options.config.parentChannelId &&
+        candidate.guildId === message.guildId &&
+        candidate.parentId === message.channelId &&
         candidate.ownerId === this.client.user?.id
       ) {
         return candidate;
@@ -434,7 +430,7 @@ export class DiscordGateway {
     } else {
       const parent = await this.client.channels.fetch(registration.parentChannelId);
       if (parent === null || !parent.isTextBased() || !("messages" in parent)) {
-        throw new Error("The configured Discord parent channel cannot fetch the claimed starter message");
+        throw new Error("The Discord parent channel cannot fetch the claimed starter message");
       }
       const starter = await parent.messages.fetch(registration.starterMessageId);
       if (
@@ -474,11 +470,14 @@ export class DiscordGateway {
       const controller = new AbortController();
       this.activeRuns.set(thread.id, controller);
       try {
+        if (message.guildId === null || thread.parentId === null) {
+          throw new Error("The Discord thread has no guild or parent channel");
+        }
         await thread.sendTyping().catch(() => undefined);
         const result = await this.options.runConversation({
           threadId: thread.id,
-          guildId: this.options.config.guildId,
-          parentChannelId: this.options.config.parentChannelId,
+          guildId: message.guildId,
+          parentChannelId: thread.parentId,
           messageId: message.id,
           userId: message.author.id,
           content: this.removeBotMention(message.content),
@@ -556,7 +555,7 @@ export class DiscordGateway {
     const scope = await this.authorizeInteraction(interaction);
     if (!scope.allowed) {
       await interaction.reply({
-        content: "This Exy instance is restricted to its configured user and channel.",
+        content: "This Exy instance is restricted to its configured user and registered threads.",
         flags: MessageFlags.Ephemeral,
         allowedMentions: { parse: [] },
       });
@@ -596,20 +595,22 @@ export class DiscordGateway {
     interaction: ChatInputCommandInteraction | AutocompleteInteraction,
   ): Promise<AuthorizedInteractionScope> {
     if (
-      interaction.guildId !== this.options.config.guildId ||
+      interaction.guildId === null ||
       interaction.user.id !== this.options.config.authorizedUserId
     ) {
       return { allowed: false };
     }
 
-    if (interaction.channelId === this.options.config.parentChannelId) {
+    const channel = interaction.channel;
+    if (
+      channel?.type === ChannelType.GuildText
+      || channel?.type === ChannelType.GuildAnnouncement
+    ) {
       return { allowed: true };
     }
 
-    const channel = interaction.channel;
     if (
-      channel?.isThread() !== true ||
-      channel.parentId !== this.options.config.parentChannelId
+      channel?.isThread() !== true
     ) {
       return { allowed: false };
     }
@@ -617,7 +618,7 @@ export class DiscordGateway {
     const registration = await this.options.threadStore.get(channel.id);
     if (
       registration?.status !== "active" ||
-      !this.registrationMatchesConfig(registration)
+      !this.registrationMatchesThread(registration, channel)
     ) {
       return { allowed: false };
     }
@@ -828,10 +829,18 @@ export class DiscordGateway {
   ): boolean {
     return (
       registration.threadId === registration.starterMessageId &&
-      registration.guildId === this.options.config.guildId &&
-      registration.parentChannelId === this.options.config.parentChannelId &&
       registration.authorizedUserId === this.options.config.authorizedUserId
     );
+  }
+
+  private registrationMatchesThread(
+    registration: DiscordThreadRegistration,
+    thread: AnyThreadChannel,
+  ): boolean {
+    return this.registrationMatchesConfig(registration)
+      && registration.threadId === thread.id
+      && registration.guildId === thread.guildId
+      && registration.parentChannelId === thread.parentId;
   }
 }
 

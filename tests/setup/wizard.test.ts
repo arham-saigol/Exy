@@ -7,8 +7,6 @@ const previous: ExyConfig = {
   version: 1,
   discord: {
     applicationId: "11111",
-    guildId: "22222",
-    parentChannelId: "33333",
     authorizedUserId: "44444",
   },
   providers: { zernioAccountId: "account-a", zernioXAnalyticsEnabled: false },
@@ -22,8 +20,6 @@ describe("setup heartbeat reconciliation", () => {
 
   it.each([
     [{ ...previous.discord, applicationId: "99991" }, "account-a"],
-    [{ ...previous.discord, guildId: "99992" }, "account-a"],
-    [{ ...previous.discord, parentChannelId: "99993" }, "account-a"],
     [{ ...previous.discord, authorizedUserId: "99994" }, "account-a"],
     [previous.discord, "account-b"],
   ])("disables and detaches heartbeat when conversation scope changes", (discord, accountId) => {

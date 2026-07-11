@@ -7,7 +7,6 @@ export interface DiscordRoutingMessage {
   guildId?: string;
   channelId: string;
   channelKind: "parent" | "thread" | "other";
-  threadParentId?: string;
   authorId: string;
   authorIsBot: boolean;
   /** True only for ordinary user messages and user replies. */
@@ -22,15 +21,13 @@ export interface DiscordRoutingMessage {
 }
 
 export interface DiscordRoutingConfig {
-  guildId: string;
-  parentChannelId: string;
   authorizedUserId: string;
 }
 
 export type DiscordIgnoreReason =
   | "bot_message"
   | "non_user_message"
-  | "wrong_guild"
+  | "direct_message"
   | "wrong_user"
   | "wrong_channel"
   | "missing_mention"
@@ -70,8 +67,8 @@ export function decideDiscordMessageRoute(
     return { action: "ignore", reason: "non_user_message" };
   }
 
-  if (message.guildId !== config.guildId) {
-    return { action: "ignore", reason: "wrong_guild" };
+  if (message.guildId === undefined) {
+    return { action: "ignore", reason: "direct_message" };
   }
 
   if (message.authorId !== config.authorizedUserId) {
@@ -79,10 +76,6 @@ export function decideDiscordMessageRoute(
   }
 
   if (message.channelKind === "parent") {
-    if (message.channelId !== config.parentChannelId) {
-      return { action: "ignore", reason: "wrong_channel" };
-    }
-
     if (!message.mentionsBot) {
       return { action: "ignore", reason: "missing_mention" };
     }
@@ -104,10 +97,6 @@ export function decideDiscordMessageRoute(
   }
 
   if (message.channelKind === "thread") {
-    if (message.threadParentId !== config.parentChannelId) {
-      return { action: "ignore", reason: "wrong_channel" };
-    }
-
     if (!message.threadRegistered) {
       return { action: "ignore", reason: "unregistered_thread" };
     }

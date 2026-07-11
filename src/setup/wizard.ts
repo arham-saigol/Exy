@@ -29,8 +29,6 @@ export function heartbeatForSetup(
   const previous = previousConfig?.heartbeat ?? { enabled: false, intervalMinutes: 30 };
   if (!previousConfig) return previous;
   const scopeChanged = previousConfig.discord.applicationId !== nextDiscord.applicationId
-    || previousConfig.discord.guildId !== nextDiscord.guildId
-    || previousConfig.discord.parentChannelId !== nextDiscord.parentChannelId
     || previousConfig.discord.authorizedUserId !== nextDiscord.authorizedUserId
     || previousConfig.providers.zernioAccountId !== nextXAccountId;
   return scopeChanged
@@ -135,16 +133,6 @@ export async function runSetup(paths: ExyPaths): Promise<void> {
     default: previousConfig?.discord.applicationId,
     validate: discordId("Application ID"),
   });
-  const guildId = await input({
-    message: "Discord guild ID",
-    default: previousConfig?.discord.guildId,
-    validate: discordId("Guild ID"),
-  });
-  const parentChannelId = await input({
-    message: "Discord parent channel ID",
-    default: previousConfig?.discord.parentChannelId,
-    validate: discordId("Parent channel ID"),
-  });
   const authorizedUserId = await input({
     message: "Authorized Discord user ID",
     default: previousConfig?.discord.authorizedUserId,
@@ -222,8 +210,6 @@ export async function runSetup(paths: ExyPaths): Promise<void> {
   };
   const discord: DiscordConfig = {
     applicationId: applicationId.trim(),
-    guildId: guildId.trim(),
-    parentChannelId: parentChannelId.trim(),
     authorizedUserId: authorizedUserId.trim(),
   };
   const config: ExyConfig = {

@@ -257,8 +257,6 @@ export async function runGateway(paths: ExyPaths): Promise<number> {
   try {
     await discord.start();
     logger.info("Exy gateway is ready", {
-      guildId: config.discord.guildId,
-      parentChannelId: config.discord.parentChannelId,
       dryRunPublishing: process.env.EXY_DRY_RUN === "1",
     });
     return await finished;

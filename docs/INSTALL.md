@@ -14,7 +14,7 @@ The application is intended for one VPS and one gateway process. SQLite is a goo
 
 Have these values ready:
 
-- Discord bot token, application/client ID, guild ID, parent channel ID, and authorized user ID
+- Discord bot token, application/client ID, and authorized user ID
 - Supermemory API key
 - Xquik API key
 - Zernio API key, with the intended X account already connected
@@ -82,7 +82,7 @@ secret answers keep existing secrets. It does not start the gateway; if the serv
 already running, the final report tells you to restart it so changed configuration takes
 effect.
 
-If the Discord application, guild, parent channel, authorized user, or connected X
+If the Discord application, authorized user, or connected X
 account changes, setup disables heartbeat and clears its delivery thread. Re-enable it
 from a newly created in-scope Exy thread after restarting.
 
@@ -121,6 +121,7 @@ sudo exy logs -f
 - writable data/workspace/session/skill paths
 - refreshable Pi OAuth and the persisted model/reasoning pair
 - Discord token and Message Content application flag
+- Discord authorized user identity
 - Supermemory, Xquik, Zernio, and Exa connectivity
 - installed and active systemd state
 
@@ -131,7 +132,7 @@ An inactive but correctly installed service is a warning. Configuration, auth, p
 | Path | Purpose | Expected access |
 | --- | --- | --- |
 | `/opt/exy` | source checkout used for updates | root-managed, service read-only |
-| `/etc/exy/config.json` | Discord IDs, selected X account, model, heartbeat settings | mode `0600` |
+| `/etc/exy/config.json` | Discord application/user IDs, selected X account, model, heartbeat settings | mode `0600` |
 | `/etc/exy/secrets.json` | Discord/provider API keys | mode `0600`; never logged |
 | `/var/lib/exy/exy.sqlite` | verifier, approvals, threads, schedules, histories | mode `0600`, WAL enabled |
 | `/var/lib/exy/pi-agent/auth.json` | Pi OAuth access/refresh credentials | Pi writes mode `0600` |
@@ -152,4 +153,5 @@ sudo exy start
 sudo exy status
 ```
 
-show no blocking doctor failures and an active service, and a mention by the configured user in the configured parent channel creates an `Exy · …` thread and receives a response.
+show no blocking doctor failures and an active service, and a mention by the configured
+user in a server text channel creates an `Exy · …` thread and receives a response.

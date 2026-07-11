@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 
-import { MessageType, type Client } from "discord.js";
+import { ChannelType, MessageType, type Client } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { DiscordGatewayOptions } from "../../src/discord/contracts.js";
@@ -24,8 +24,6 @@ function gatewayOptions(
   return {
     config: {
       applicationId: "app-1",
-      guildId: "guild-1",
-      parentChannelId: "parent-1",
       authorizedUserId: "user-1",
     },
     botToken: "test-token",
@@ -50,7 +48,7 @@ function gatewayOptions(
 }
 
 describe("DiscordGateway lifecycle", () => {
-  it("starts and stops idempotently while registering guild commands once", async () => {
+  it("starts and stops idempotently while registering discovered-guild commands once", async () => {
     const client = new FakeClient();
     const options = gatewayOptions(client);
     const gateway = new DiscordGateway(options);
@@ -130,6 +128,51 @@ describe("DiscordGateway lifecycle", () => {
     expect(client.destroy).toHaveBeenCalledTimes(1);
   });
 
+  it("discovers the guild and parent channel from an authorized starter", async () => {
+    const client = new FakeClient();
+    const claim = vi.fn(async () => true);
+    const thread = {
+      id: "starter-2",
+      guildId: "guild-2",
+      parentId: "parent-2",
+      isThread: () => true,
+      sendTyping: vi.fn(async () => undefined),
+      send: vi.fn(async () => undefined),
+    };
+    const gateway = new DiscordGateway(gatewayOptions(client, {
+      threadStore: {
+        get: vi.fn(async () => undefined),
+        claim,
+        activate: vi.fn(async () => undefined),
+        fail: vi.fn(async () => undefined),
+      },
+    }));
+    await gateway.start();
+
+    client.emit("messageCreate", {
+      id: "starter-2",
+      channelId: "parent-2",
+      channel: { type: ChannelType.GuildText, isThread: () => false },
+      guildId: "guild-2",
+      author: { id: "user-1", bot: false },
+      type: MessageType.Default,
+      mentions: { users: { has: () => true } },
+      hasThread: false,
+      content: "<@bot-1> hello",
+      attachments: [],
+      createdAt: new Date(),
+      startThread: vi.fn(async () => thread),
+      reply: vi.fn(async () => undefined),
+    });
+
+    await vi.waitFor(() => expect(claim).toHaveBeenCalledWith(expect.objectContaining({
+      guildId: "guild-2",
+      parentChannelId: "parent-2",
+      authorizedUserId: "user-1",
+    })));
+    await gateway.stop();
+  });
+
   it("commits a structured response only after Discord delivery succeeds", async () => {
     const client = new FakeClient();
     const onDelivered = vi.fn(async () => undefined);
@@ -138,6 +181,7 @@ describe("DiscordGateway lifecycle", () => {
     const send = vi.fn(async () => ({ id: "response" }));
     const thread = {
       id: "thread-1",
+      guildId: "guild-1",
       parentId: "parent-1",
       isThread: () => true,
       sendTyping: vi.fn(async () => undefined),
@@ -178,6 +222,7 @@ describe("DiscordGateway lifecycle", () => {
     const onChunkDelivered = vi.fn(async () => undefined);
     const thread = {
       id: "thread-1",
+      guildId: "guild-1",
       parentId: "parent-1",
       isThread: () => true,
       sendTyping: vi.fn(async () => undefined),

@@ -30,8 +30,6 @@ export function validateConfig(value: unknown): ExyConfig {
   if (config.version !== 1) throw new ConfigurationError("Unsupported configuration version");
   if (!config.discord) throw new ConfigurationError("discord configuration is required");
   discordId(config.discord.applicationId, "Discord application ID");
-  discordId(config.discord.guildId, "Discord guild ID");
-  discordId(config.discord.parentChannelId, "Discord parent channel ID");
   discordId(config.discord.authorizedUserId, "Discord authorized user ID");
   if (!config.providers || typeof config.providers !== "object") {
     throw new ConfigurationError("providers configuration is required");

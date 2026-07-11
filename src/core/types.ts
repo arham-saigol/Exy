@@ -4,8 +4,6 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
 export interface DiscordConfig {
   applicationId: string;
-  guildId: string;
-  parentChannelId: string;
   authorizedUserId: string;
 }
 
