@@ -274,7 +274,7 @@ export function createAutomationTools(deps: AutomationToolDependencies): ToolDef
     parameters: Type.Object({}),
     execute: async () => {
       const config = await deps.configStore.readConfig();
-      const document = readHeartbeatDocument(deps.paths.heartbeatFile, true);
+      const document = await readHeartbeatDocument(deps.paths.heartbeatFile, true);
       return text({ configuration: config.heartbeat, content: document.content });
     },
   });

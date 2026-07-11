@@ -89,4 +89,24 @@ describe("ProviderHttp", () => {
       message: "The provider request was interrupted.",
     });
   });
+
+  it("reports request timeouts as safe interrupted errors", async () => {
+    const http = new ProviderHttp({
+      provider: "example",
+      baseUrl: "https://example.invalid",
+      fetch: mockFetch(async ({ init }) => {
+        await new Promise<void>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        });
+        return jsonResponse({ ok: true });
+      }),
+    });
+
+    const error = await http.request({ path: "probe", timeoutMs: 1 }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).toSafeObject()).toMatchObject({
+      code: "request_aborted",
+      message: "The provider request was interrupted.",
+    });
+  });
 });

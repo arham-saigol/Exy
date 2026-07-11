@@ -578,7 +578,7 @@ export class DiscordGateway {
         case "restart":
           await this.respondToInteraction(interaction, "Restarting the Exy gateway…");
           setTimeout(() => {
-            void Promise.resolve(this.options.onRestart()).catch((error: unknown) => {
+            void Promise.resolve().then(() => this.options.onRestart()).catch((error: unknown) => {
               this.logger.error("Requested gateway restart failed", errorLogContext(error));
             });
           }, 250);
@@ -880,6 +880,7 @@ function errorLogContext(error: unknown): Readonly<Record<string, unknown>> {
   const candidate = error as Error & { code?: unknown; status?: unknown };
   return {
     errorName: error.name,
+    errorMessage: error.message,
     ...(typeof candidate.code === "string" || typeof candidate.code === "number"
       ? { errorCode: candidate.code }
       : {}),

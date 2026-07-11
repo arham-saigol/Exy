@@ -193,7 +193,7 @@ export async function runGateway(paths: ExyPaths): Promise<number> {
 
   scheduler.register("heartbeat", async ({ signal, runId }) => {
     const current = await configStore.readConfig();
-    const document = readHeartbeatDocument(paths.heartbeatFile, current.heartbeat.enabled);
+    const document = await readHeartbeatDocument(paths.heartbeatFile, current.heartbeat.enabled);
     if (!document.enabled) return { skipped: "disabled" };
     if (!heartbeatHasWork(document.content)) return { skipped: "empty" };
     const threadId = current.heartbeat.deliveryThreadId;

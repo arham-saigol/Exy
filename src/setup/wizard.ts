@@ -58,6 +58,9 @@ async function parseResponse(response: Response, provider: string, secrets: read
     const detail = typeof body?.error === "string" ? body.error : typeof body?.message === "string" ? body.message : response.statusText;
     throw new Error(`${provider} returned ${response.status}: ${sanitizeDiagnostic(detail || "request failed", secrets)}`);
   }
+  if (body === undefined) {
+    throw new Error(`${provider} returned ${response.status}: ${sanitizeDiagnostic("response body was invalid or missing", secrets)}`);
+  }
   return body;
 }
 

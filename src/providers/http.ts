@@ -83,7 +83,7 @@ export class ProviderHttp {
         ...(body === undefined ? {} : { body }),
       });
     } catch (error) {
-      const aborted = error instanceof Error && error.name === "AbortError";
+      const aborted = error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
       throw new ProviderError({
         provider: this.#provider,
         code: aborted ? "request_aborted" : "network_error",

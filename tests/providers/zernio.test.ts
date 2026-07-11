@@ -94,6 +94,17 @@ describe("ZernioClient publishing", () => {
     expect(requestJson(captured!)).not.toHaveProperty("publishNow");
   });
 
+  it("rejects malformed reply IDs during validation before making a request", async () => {
+    const fetch = mockFetch(() => jsonResponse({ valid: true }));
+    const client = new ZernioClient("sk_zernio_test_secret", { fetch });
+
+    await expect(client.validatePost({
+      accountId: "wanted-account",
+      content: "Draft reply",
+      replyToTweetId: "https://x.com/exy/status/1900123456789012345",
+    })).rejects.toThrow("replyToTweetId must be an X post ID, not a URL.");
+  });
+
   it("keeps 202 analytics distinct from ready analytics", async () => {
     const client = new ZernioClient("sk_zernio_test_secret", {
       fetch: mockFetch(() => jsonResponse({ status: "syncing" }, 202)),

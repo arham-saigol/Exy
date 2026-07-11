@@ -302,9 +302,6 @@ export class ZernioClient {
   }
 
   async publishReply(input: PublishReplyInput, signal?: AbortSignal): Promise<PublishResult> {
-    if (!/^\d+$/.test(input.replyToTweetId)) {
-      throw new TypeError("replyToTweetId must be an X post ID, not a URL.");
-    }
     const body = buildPostBody(input, true);
     return this.#publish(body, input.accountId, input.requestId, signal);
   }
@@ -393,6 +390,9 @@ function buildPostBody(
   if (!hasContent && !hasMedia) throw new TypeError("A post needs text or at least one media item.");
 
   const replyToTweetId = "replyToTweetId" in input ? input.replyToTweetId : undefined;
+  if (replyToTweetId !== undefined && !/^\d+$/.test(replyToTweetId)) {
+    throw new TypeError("replyToTweetId must be an X post ID, not a URL.");
+  }
   const platform: ZernioPlatformTarget = {
     platform: "twitter",
     accountId: input.accountId,

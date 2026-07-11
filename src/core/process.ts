@@ -12,11 +12,13 @@ export function runCommand(
   options: { cwd?: string; inherit?: boolean; env?: NodeJS.ProcessEnv } = {},
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
+    const signal = AbortSignal.timeout(15_000);
     const child = spawn(command, args, {
       ...(options.cwd ? { cwd: options.cwd } : {}),
       ...(options.env ? { env: options.env } : {}),
       stdio: options.inherit ? "inherit" : ["ignore", "pipe", "pipe"],
       windowsHide: true,
+      signal,
     });
     let stdout = "";
     let stderr = "";

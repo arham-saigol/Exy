@@ -291,7 +291,7 @@ export class ExyAgentRuntime {
             : guardedModelOutput);
     const preserveExactFencedContent = publishSummary === undefined && (
       preparedSummaries.length > 0
-      || (preparedSummaries.length === 0 && originalDraftSummaries.length > 0)
+      || originalDraftSummaries.length > 0
     );
     const preserveGatewayFencedContent = preserveExactFencedContent || (
       publishSummary === undefined
@@ -476,7 +476,13 @@ export class ExyAgentRuntime {
 
   private async getOrCreateSession(threadId: string): Promise<LiveSession> {
     const existing = this.live.get(threadId);
-    if (existing) return existing;
+    if (existing) {
+      if (this.options.threads.findByThreadId(threadId)?.archived) {
+        await this.evictLiveSession(threadId, existing);
+        throw new Error("This Discord thread is not an active Exy conversation");
+      }
+      return existing;
+    }
     const record = this.options.threads.findByThreadId(threadId);
     if (!record || record.archived) throw new Error("This Discord thread is not an active Exy conversation");
     const config = await this.options.configStore.readConfig();
@@ -548,6 +554,7 @@ export class ExyAgentRuntime {
       live.record.discordUserId !== config.discord.authorizedUserId
       || live.record.xAccountId !== config.providers.zernioAccountId
     ) {
+      await this.evictLiveSession(live.record.threadId, live);
       throw new Error("This Exy thread belongs to a previous user or connected X-account configuration; start a new parent-channel thread");
     }
     if (
@@ -559,6 +566,20 @@ export class ExyAgentRuntime {
     await live.session.setModel(selected.model);
     live.session.setThinkingLevel(config.model.reasoning);
     live.preference = config.model;
+  }
+
+  private async evictLiveSession(threadId: string, live: LiveSession): Promise<void> {
+    if (this.live.get(threadId) !== live) return;
+    this.live.delete(threadId);
+    try {
+      try {
+        if (live.session.isStreaming) await live.session.abort();
+      } finally {
+        live.session.dispose();
+      }
+    } catch {
+      // Eviction must preserve the archived/scope-mismatch outcome.
+    }
   }
 
   private async recallMemory(scope: Scope, query: string, signal?: AbortSignal): Promise<string> {

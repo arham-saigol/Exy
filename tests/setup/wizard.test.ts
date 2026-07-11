@@ -50,4 +50,10 @@ describe("Zernio setup account discovery", () => {
       hasAnalyticsAccess: true,
     });
   });
+
+  it("rejects a successful response with a missing body", async () => {
+    await expect(listZernioAccounts("zernio-secret", async () => new Response(null, {
+      status: 200,
+    }))).rejects.toThrow("Zernio returned 200: response body was invalid or missing");
+  });
 });

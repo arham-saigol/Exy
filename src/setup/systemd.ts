@@ -1,5 +1,4 @@
 import { chmod, realpath, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { commandExists, runCommand } from "../core/process.js";
 import type { ExyPaths } from "../config/paths.js";
 
@@ -11,8 +10,7 @@ function quoteSystemdArgument(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
-export function renderSystemdUnit(paths: ExyPaths, executable = process.execPath, cliPath = process.argv[1]): string {
-  if (!cliPath) throw new Error("Cannot determine the Exy CLI entry point");
+export function renderSystemdUnit(paths: ExyPaths, executableTarget: string, cliTarget: string): string {
   return `[Unit]
 Description=Exy X growth agent gateway
 After=network-online.target
@@ -26,7 +24,7 @@ WorkingDirectory=${paths.workspaceDir}
 Environment=EXY_CONFIG_DIR=${paths.configDir}
 Environment=EXY_DATA_DIR=${paths.dataDir}
 Environment=EXY_WORKSPACE_DIR=${paths.workspaceDir}
-ExecStart=${quoteSystemdArgument(resolve(executable))} ${quoteSystemdArgument(resolve(cliPath))} gateway
+ExecStart=${quoteSystemdArgument(executableTarget)} ${quoteSystemdArgument(cliTarget)} gateway
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
@@ -93,7 +91,7 @@ export async function installSystemdService(paths: ExyPaths): Promise<void> {
   }
 
   await requireSuccess("chown", ["-R", "exy:exy", paths.configDir, paths.dataDir]);
-  await writeFile(SERVICE_FILE, renderSystemdUnit(paths), { mode: 0o644 });
+  await writeFile(SERVICE_FILE, renderSystemdUnit(paths, executableTarget, cliTarget), { mode: 0o644 });
   await chmod(SERVICE_FILE, 0o644);
   await requireSuccess("systemctl", ["daemon-reload"]);
   await requireSuccess("systemctl", ["enable", SERVICE_NAME]);

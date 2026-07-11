@@ -29,39 +29,39 @@ export async function runLogin(paths: ExyPaths): Promise<void> {
   try {
     console.log("Starting Pi's OpenAI Codex device-code login for ChatGPT Plus/Pro…\n");
     const pi = new PiModelService(paths.piAuthFile);
-  await pi.loginWithDeviceCode({
-    onDeviceCode: ({ verificationUri, userCode, expiresInSeconds }) => {
-      console.log(`Open ${verificationUri}`);
-      console.log(`Enter code: ${userCode}`);
-      if (expiresInSeconds) console.log(`The code expires in about ${Math.ceil(expiresInSeconds / 60)} minutes.`);
-      console.log("Waiting for authorization…\n");
-    },
-    onProgress: (message) => console.log(message),
-  });
+    await pi.loginWithDeviceCode({
+      onDeviceCode: ({ verificationUri, userCode, expiresInSeconds }) => {
+        console.log(`Open ${verificationUri}`);
+        console.log(`Enter code: ${userCode}`);
+        if (expiresInSeconds) console.log(`The code expires in about ${Math.ceil(expiresInSeconds / 60)} minutes.`);
+        console.log("Waiting for authorization…\n");
+      },
+      onProgress: (message) => console.log(message),
+    });
 
-  const models = pi.listCodexModels();
-  if (models.length === 0) {
-    throw new Error("Pi authentication succeeded but Pi exposed no OpenAI Codex models");
-  }
-  const modelKey = await select({
-    message: "Default Pi model",
-    choices: models.map((model) => ({
-      name: `${model.name} (${model.provider}/${model.id})`,
-      value: `${model.provider}\u0000${model.id}`,
-    })),
-    pageSize: 15,
-  });
-  const [provider, modelId] = modelKey.split("\u0000");
-  const selected = models.find((model) => model.provider === provider && model.id === modelId);
-  if (!selected) throw new Error("The selected model is no longer available from Pi");
-  if (selected.reasoningLevels.length === 0) {
-    throw new Error(`Pi reported no supported reasoning levels for ${selected.provider}/${selected.id}`);
-  }
+    const models = pi.listCodexModels();
+    if (models.length === 0) {
+      throw new Error("Pi authentication succeeded but Pi exposed no OpenAI Codex models");
+    }
+    const modelKey = await select({
+      message: "Default Pi model",
+      choices: models.map((model) => ({
+        name: `${model.name} (${model.provider}/${model.id})`,
+        value: `${model.provider}\u0000${model.id}`,
+      })),
+      pageSize: 15,
+    });
+    const [provider, modelId] = modelKey.split("\u0000");
+    const selected = models.find((model) => model.provider === provider && model.id === modelId);
+    if (!selected) throw new Error("The selected model is no longer available from Pi");
+    if (selected.reasoningLevels.length === 0) {
+      throw new Error(`Pi reported no supported reasoning levels for ${selected.provider}/${selected.id}`);
+    }
 
-  const reasoning = await select<ThinkingLevel>({
-    message: `Default reasoning for ${selected.name}`,
-    choices: selected.reasoningLevels.map((level) => ({ name: level, value: level })),
-  });
+    const reasoning = await select<ThinkingLevel>({
+      message: `Default reasoning for ${selected.name}`,
+      choices: selected.reasoningLevels.map((level) => ({ name: level, value: level })),
+    });
     preference = { provider: selected.provider, modelId: selected.id, reasoning };
     await store.updateModel(preference);
     if (process.platform !== "win32") await chmod(paths.piAuthFile, 0o600);
