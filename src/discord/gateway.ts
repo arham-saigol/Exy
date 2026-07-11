@@ -11,6 +11,7 @@ import {
   type AnyThreadChannel,
   type AutocompleteInteraction,
   type ChatInputCommandInteraction,
+  type Guild,
   type Interaction,
   type Message,
 } from "discord.js";
@@ -86,6 +87,16 @@ export class DiscordGateway {
 
   private readonly clientErrorListener = (error: Error): void => {
     this.logger.error("Discord client error", errorLogContext(error));
+  };
+
+  private readonly guildCreateListener = (guild: Guild): void => {
+    if (this.state !== "running") return;
+    void this.registerGuildCommands(guild.id).catch((error: unknown) => {
+      this.logger.error("Discord guild command registration failed", {
+        guildId: guild.id,
+        ...errorLogContext(error),
+      });
+    });
   };
 
   constructor(options: DiscordGatewayOptions) {
@@ -209,6 +220,7 @@ export class DiscordGateway {
     }
     this.client.on(Events.MessageCreate, this.messageListener);
     this.client.on(Events.InteractionCreate, this.interactionListener);
+    this.client.on(Events.GuildCreate, this.guildCreateListener);
     this.client.on(Events.Error, this.clientErrorListener);
     this.listenersAttached = true;
   }
@@ -219,25 +231,33 @@ export class DiscordGateway {
     }
     this.client.off(Events.MessageCreate, this.messageListener);
     this.client.off(Events.InteractionCreate, this.interactionListener);
+    this.client.off(Events.GuildCreate, this.guildCreateListener);
     this.client.off(Events.Error, this.clientErrorListener);
     this.listenersAttached = false;
   }
 
   private async registerCommands(): Promise<void> {
     const commands = buildDiscordApplicationCommands();
-    if (this.options.registerCommands !== undefined) {
-      await this.options.registerCommands(commands);
-      return;
-    }
-
     const rest = new REST({ version: "10" }).setToken(this.options.botToken);
     await Promise.all(
       [...this.client.guilds.cache.keys()].map((guildId) =>
-        rest.put(
-          Routes.applicationGuildCommands(this.options.config.applicationId, guildId),
-          { body: commands },
-        ),
+        this.registerGuildCommands(guildId, commands, rest),
       ),
+    );
+  }
+
+  private async registerGuildCommands(
+    guildId: string,
+    commands = buildDiscordApplicationCommands(),
+    rest = new REST({ version: "10" }).setToken(this.options.botToken),
+  ): Promise<void> {
+    if (this.options.registerCommands !== undefined) {
+      await this.options.registerCommands(commands, guildId);
+      return;
+    }
+    await rest.put(
+      Routes.applicationGuildCommands(this.options.config.applicationId, guildId),
+      { body: commands },
     );
   }
 

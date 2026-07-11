@@ -11,6 +11,7 @@ class FakeClient extends EventEmitter {
   readonly login = vi.fn(async () => "token");
   readonly user = { id: "bot-1" };
   readonly channels = { fetch: vi.fn() };
+  readonly guilds = { cache: new Map([["guild-1", { id: "guild-1" }]]) };
 
   isReady(): boolean {
     return true;
@@ -63,6 +64,24 @@ describe("DiscordGateway lifecycle", () => {
     expect(client.destroy).not.toHaveBeenCalled();
     expect(client.listenerCount("messageCreate")).toBe(0);
     expect(client.listenerCount("interactionCreate")).toBe(0);
+    expect(client.listenerCount("guildCreate")).toBe(0);
+  });
+
+  it("registers commands when the bot joins a guild after startup", async () => {
+    const client = new FakeClient();
+    const registerCommands = vi.fn(async () => undefined);
+    const gateway = new DiscordGateway(gatewayOptions(client, { registerCommands }));
+    await gateway.start();
+    registerCommands.mockClear();
+
+    client.emit("guildCreate", { id: "guild-2" });
+
+    await vi.waitFor(() => expect(registerCommands).toHaveBeenCalledWith(
+      expect.any(Array),
+      "guild-2",
+    ));
+    expect(registerCommands).toHaveBeenCalledTimes(1);
+    await gateway.stop();
   });
 
   it("cleans up listeners after startup registration fails", async () => {
@@ -78,6 +97,7 @@ describe("DiscordGateway lifecycle", () => {
     expect(gateway.isRunning).toBe(false);
     expect(client.listenerCount("messageCreate")).toBe(0);
     expect(client.listenerCount("interactionCreate")).toBe(0);
+    expect(client.listenerCount("guildCreate")).toBe(0);
   });
 
   it("recovers a bot-owned durable creating thread during startup", async () => {
