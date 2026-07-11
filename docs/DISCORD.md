@@ -1,19 +1,19 @@
 # Discord configuration
 
 Exy is intentionally a single-operator Discord bot. It accepts control only from one
-configured user, in one configured guild, beneath one configured parent text channel.
+configured user. That user can start an Exy thread in any server text channel where the
+bot is installed and has the required permissions.
 
 ## Create the application and bot
 
 1. In the [Discord Developer Portal](https://discord.com/developers/applications), create
    an application and add a bot.
 2. On the Bot page, enable the privileged **Message Content Intent**. Exy needs message
-   text both to detect a parent-channel mention and to continue conversation inside a
+   text both to detect a channel mention and to continue conversation inside a
    thread. The implementation requests only Guilds, Guild Messages, and Message Content
    gateway intents.
 3. Copy the application/client ID and bot token. Treat the bot token as a password.
-4. Enable Developer Mode in your Discord client, then copy the guild ID, intended parent
-   channel ID, and authorized user ID.
+4. Enable Developer Mode in your Discord client, then copy the authorized user ID.
 
 Discord documents gateway intents and the Message Content restriction in its
 [Gateway intents reference](https://docs.discord.com/developers/events/gateway#gateway-intents).
@@ -21,7 +21,7 @@ Discord documents gateway intents and the Message Content restriction in its
 ## Install the bot
 
 Generate an installation URL for the bot and `applications.commands` scopes. Grant the
-bot these permissions in the intended parent channel and its threads:
+bot these permissions in each channel where you intend to start Exy threads:
 
 - View Channel
 - Read Message History
@@ -42,25 +42,27 @@ Run:
 sudo exy setup
 ```
 
-Enter the bot token, application ID, guild ID, parent channel ID, and authorized user ID.
-The gateway registers four guild-scoped slash commands at startup, so command changes are
-normally visible immediately:
+Enter the bot token, application ID, and authorized user ID. At startup, the gateway
+discovers each server where the bot is installed and registers four guild-scoped slash
+commands, so command changes are normally visible immediately:
 
 - `/model [model]` shows Pi-exposed models or changes the persisted default.
 - `/reasoning [level]` shows levels supported by the active model or changes the default.
 - `/interrupt` aborts the active agent turn in the current Exy thread.
 - `/restart` asks the systemd-managed gateway to restart.
 
-Slash-command responses are ephemeral. Commands from another user, guild, channel, or an
-unregistered sibling thread are rejected without exposing internal routing state. See
+Slash-command responses are ephemeral. Commands from another user, a direct message,
+an unsupported channel, or an unregistered sibling thread are rejected without exposing
+internal routing state. See
 Discord's [application commands](https://docs.discord.com/developers/interactions/application-commands)
 and [interaction responses](https://docs.discord.com/developers/interactions/receiving-and-responding)
 documentation.
 
 ## Conversation routing
 
-Mention Exy in a normal message in the configured parent channel. Exy atomically claims
-that starter message, asks Discord to create a thread, and stores the active thread in
+Mention Exy in a normal message in any server text channel. That channel becomes the
+parent for the conversation. Exy atomically claims that starter message, asks Discord
+to create a thread, and stores the active thread in
 SQLite. Discord makes a thread created from a message use the starter message ID as the
 thread ID; Exy checks this identity when restoring state.
 

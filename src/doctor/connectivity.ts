@@ -60,18 +60,6 @@ export async function checkDiscordIntent(config: ExyConfig, secrets: ExySecrets)
   return result;
 }
 
-interface DiscordRole {
-  id?: string;
-  permissions?: string;
-}
-
-interface DiscordOverwrite {
-  id?: string;
-  type?: number;
-  allow?: string;
-  deny?: string;
-}
-
 async function discordJson(url: string, token: string): Promise<unknown> {
   const response = await fetch(url, {
     headers: { Authorization: `Bot ${token}` },
@@ -85,106 +73,12 @@ async function discordJson(url: string, token: string): Promise<unknown> {
   return body;
 }
 
-function asPermission(value: unknown): bigint {
-  if (typeof value !== "string" || !/^\d+$/u.test(value)) return 0n;
-  return BigInt(value);
-}
-
-function effectiveChannelPermissions(
-  guildId: string,
-  botId: string,
-  memberRoleIds: readonly string[],
-  roles: readonly DiscordRole[],
-  overwrites: readonly DiscordOverwrite[],
-): bigint {
-  let permissions = asPermission(roles.find((role) => role.id === guildId)?.permissions);
-  for (const role of roles) {
-    if (role.id && memberRoleIds.includes(role.id)) permissions |= asPermission(role.permissions);
-  }
-  if ((permissions & (1n << 3n)) !== 0n) return (1n << 53n) - 1n;
-
-  const apply = (deny: bigint, allow: bigint) => {
-    permissions = (permissions & ~deny) | allow;
-  };
-  const everyone = overwrites.find((overwrite) => overwrite.type === 0 && overwrite.id === guildId);
-  if (everyone) apply(asPermission(everyone.deny), asPermission(everyone.allow));
-
-  let roleDeny = 0n;
-  let roleAllow = 0n;
-  for (const overwrite of overwrites) {
-    if (overwrite.type === 0 && overwrite.id && memberRoleIds.includes(overwrite.id)) {
-      roleDeny |= asPermission(overwrite.deny);
-      roleAllow |= asPermission(overwrite.allow);
-    }
-  }
-  apply(roleDeny, roleAllow);
-  const member = overwrites.find((overwrite) => overwrite.type === 1 && overwrite.id === botId);
-  if (member) apply(asPermission(member.deny), asPermission(member.allow));
-  return permissions;
-}
-
-export async function checkDiscordScope(config: ExyConfig, secrets: ExySecrets): Promise<CheckResult> {
-  const token = secrets.discordBotToken;
-  try {
-    const bot = await discordJson("https://discord.com/api/v10/users/@me", token) as { id?: unknown };
-    if (typeof bot.id !== "string") throw new Error("Discord did not return the bot identity");
-    const [guild, channel, member, roles] = await Promise.all([
-      discordJson(`https://discord.com/api/v10/guilds/${config.discord.guildId}`, token),
-      discordJson(`https://discord.com/api/v10/channels/${config.discord.parentChannelId}`, token),
-      discordJson(`https://discord.com/api/v10/guilds/${config.discord.guildId}/members/${bot.id}`, token),
-      discordJson(`https://discord.com/api/v10/guilds/${config.discord.guildId}/roles`, token),
-    ]);
-    if (!guild || typeof guild !== "object") throw new Error("Configured Discord guild is unavailable");
-    if (!channel || typeof channel !== "object") throw new Error("Configured Discord parent channel is unavailable");
-    const channelRecord = channel as { guild_id?: unknown; type?: unknown; permission_overwrites?: unknown };
-    if (channelRecord.guild_id !== config.discord.guildId) throw new Error("Configured channel does not belong to the configured guild");
-    if (channelRecord.type !== 0 && channelRecord.type !== 5) throw new Error("Configured parent channel must be a guild text or announcement channel");
-    const memberRoles = Array.isArray((member as { roles?: unknown }).roles)
-      ? (member as { roles: unknown[] }).roles.filter((value): value is string => typeof value === "string")
-      : [];
-    const roleList = Array.isArray(roles) ? roles as DiscordRole[] : [];
-    const overwrites = Array.isArray(channelRecord.permission_overwrites)
-      ? channelRecord.permission_overwrites as DiscordOverwrite[]
-      : [];
-    const permissions = effectiveChannelPermissions(config.discord.guildId, bot.id, memberRoles, roleList, overwrites);
-    const required = [
-      ["View Channel", 1n << 10n],
-      ["Send Messages", 1n << 11n],
-      ["Read Message History", 1n << 16n],
-      ["Create Public Threads", 1n << 35n],
-      ["Send Messages in Threads", 1n << 38n],
-    ] as const;
-    const missing = required.filter(([, bit]) => (permissions & bit) === 0n).map(([name]) => name);
-    return missing.length === 0
-      ? { name: "Discord guild/channel permissions", ok: true, detail: "configured scope is accessible" }
-      : { name: "Discord guild/channel permissions", ok: false, detail: `missing: ${missing.join(", ")}` };
-  } catch (error) {
-    return { name: "Discord guild/channel permissions", ok: false, detail: sanitizeDiagnostic(error, [token]) };
-  }
-}
-
 export async function checkDiscordAuthorizedUser(config: ExyConfig, secrets: ExySecrets): Promise<CheckResult> {
   const token = secrets.discordBotToken;
   try {
     const user = await discordJson(`https://discord.com/api/v10/users/${config.discord.authorizedUserId}`, token) as { id?: unknown };
     if (user.id !== config.discord.authorizedUserId) throw new Error("Discord did not return the configured authorized user");
-    try {
-      await discordJson(
-        `https://discord.com/api/v10/guilds/${config.discord.guildId}/members/${config.discord.authorizedUserId}`,
-        token,
-      );
-      return { name: "Discord authorized user", ok: true, detail: "user identity and guild membership verified" };
-    } catch (error) {
-      const detail = sanitizeDiagnostic(error, [token]);
-      if (/HTTP 403:/u.test(detail)) {
-        return {
-          name: "Discord authorized user",
-          ok: true,
-          detail: "user identity exists; guild membership could not be queried without Discord's Server Members Intent",
-        };
-      }
-      throw error;
-    }
+    return { name: "Discord authorized user", ok: true, detail: "user identity verified" };
   } catch (error) {
     return { name: "Discord authorized user", ok: false, detail: sanitizeDiagnostic(error, [token]) };
   }
@@ -249,7 +143,6 @@ export async function checkAllProviders(config: ExyConfig, secrets: ExySecrets):
   return Promise.all([
     checkDiscord(secrets),
     checkDiscordIntent(config, secrets),
-    checkDiscordScope(config, secrets),
     checkDiscordAuthorizedUser(config, secrets),
     checkSupermemory(secrets),
     checkXquik(secrets),

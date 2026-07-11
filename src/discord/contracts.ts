@@ -99,6 +99,7 @@ export interface DiscordLogger {
 
 export type DiscordCommandRegistrar = (
   commands: readonly RESTPostAPIApplicationCommandsJSONBody[],
+  guildId: string,
 ) => Promise<void>;
 
 export interface DiscordGatewayOptions {

@@ -24,8 +24,6 @@ const config: ExyConfig = {
   version: 1,
   discord: {
     applicationId: "123456789012345678",
-    guildId: "223456789012345678",
-    parentChannelId: "323456789012345678",
     authorizedUserId: "423456789012345678",
   },
   providers: {

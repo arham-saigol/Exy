@@ -6,8 +6,8 @@ an HTTP administration server.
 
 ## Runtime flow
 
-1. Discord accepts a message only from the configured guild, user, and parent-channel
-   scope, then resolves or creates a durable Exy thread.
+1. Discord accepts a starter only from the configured user in a server text channel, or
+   a continuation in a durably registered Exy thread, then resolves or creates the thread.
 2. The gateway serializes turns within that thread and loads its own Pi JSONL session.
 3. Exy recalls the matching Supermemory profile and semantic memories.
 4. Pi runs with the persisted model/reasoning preference and a lean X-growth system

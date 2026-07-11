@@ -69,20 +69,23 @@ default reported by Pi. `/reasoning` shows only the selected model's supported l
 Check all of the following:
 
 - the message author exactly matches the configured authorized user;
-- the message is in the configured parent channel, or in an active Exy-created thread;
-- the parent-channel message mentions the bot;
+- the starter message is in a server text channel, or the message is in an active
+  Exy-created thread;
+- the starter message mentions the bot;
 - Message Content Intent is enabled in the Developer Portal;
 - the bot can view history, send messages, create public threads, and send in threads;
-- the guild, parent channel, application, and user snowflake IDs are correct.
+- the application and authorized-user snowflake IDs are correct.
 
 Exy deliberately ignores unauthorized and unregistered contexts without explaining its
-internal routing state. Rerun setup to correct IDs.
+internal routing state. Rerun setup to correct IDs. Because no channel is configured in
+advance, `exy doctor` cannot preflight per-channel permission overrides; inspect the
+channel permissions if thread creation fails.
 
 ## A thread exists but Exy does not adopt it
 
-Only threads durably claimed and created from an authorized parent-channel starter are
+Only threads durably claimed and created from an authorized starter are
 valid Exy threads. This prevents a mention in an arbitrary sibling thread from bypassing
-routing controls. Start a new mention in the parent channel. If Discord created the
+routing controls. Start a new mention in a server text channel. If Discord created the
 thread but the gateway crashed before activating it, restart once; Exy can recover only a
 bot-owned thread whose ID matches the claimed starter message.
 
