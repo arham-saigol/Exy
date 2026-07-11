@@ -519,7 +519,6 @@ export class ExyAgentRuntime {
       approvals: this.options.approvals,
       xAccountLabel: config.providers.zernioAccountUsername ?? record.xAccountId,
       stageReplyOpportunity: (input) => this.stageReplyOpportunity(threadId, scope, record.sessionId, input),
-      analyticsEnabled: config.providers.zernioXAnalyticsEnabled === true,
       dryRunPublishing: this.options.dryRunPublishing ?? false,
       extraTools: automationTools,
     });

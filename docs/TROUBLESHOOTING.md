@@ -100,8 +100,9 @@ Rotate the affected key with `sudo exy setup`, then rerun doctor. Common safe di
 - invalid response: upstream returned non-JSON or a schema incompatible with this Exy
   release; retain sanitized logs and compare the provider changelog.
 
-Exa doctor performs a small real search. Zernio analytics remain disabled unless setup
-records explicit acceptance of its possible pass-through charge.
+Exa doctor performs a small real search. Zernio background analytics sync remains disabled
+unless setup records explicit acceptance of its possible pass-through charge; Exy's
+read-only Zernio account, analytics, and post-history tools remain available either way.
 
 ## A publish was queued or accepted but not reported as successful
 

@@ -51,18 +51,20 @@ Zernio is Exy's only X publishing and analytics integration.
 3. Run `sudo exy setup`. The wizard retrieves connected `twitter` accounts and asks you
    to select one. It stores the account ID, not a bearer token, in non-secret config.
 4. Choose whether to enable X analytics. Zernio documents that background X analytics may
-   incur pass-through X API charges, so the Zernio capability and Exy's analytics tool
-   remain disabled unless explicitly accepted. Every setup rerun reconciles the selected
-   account to that choice, and switching accounts disables analytics on the old account.
+   incur pass-through X API charges, so background analytics sync remains disabled unless
+   explicitly accepted. This preference does not gate Exy's read-only account, analytics,
+   or post-history tools. Every setup rerun reconciles the selected account to that choice,
+   and switching accounts disables analytics on the old account.
    Enabling it also requires the account to report Zernio analytics add-on access; setup
    refuses an unsupported selection and doctor checks `canFetchAnalytics`.
 
 The integration follows Zernio's official account, post, validation, and analytics APIs:
 
 - [list connected accounts](https://docs.zernio.com/accounts/list-accounts)
+- [list posts](https://docs.zernio.com/posts/list-posts)
 - [create a post](https://docs.zernio.com/posts/create-post)
 - [retrieve post analytics](https://docs.zernio.com/analytics/get-analytics)
-- [retrieve follower statistics](https://docs.zernio.com/analytics/get-follower-stats)
+- [retrieve follower statistics](https://docs.zernio.com/accounts/get-follower-stats)
 
 A reply is a normal publish request whose X platform target includes
 `platformSpecificData.replyToTweetId`. Before an approval is created, Exy calls Zernio's

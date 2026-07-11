@@ -141,6 +141,7 @@ describe("ZernioClient publishing", () => {
     await client.getAccountsHealth();
     await client.getAccountHealth("account-1");
     await client.getPost("post-1");
+    await client.listPosts({ accountId: "account-1", page: 2, limit: 25, source: "external" });
     await client.getFollowerStats({
       accountIds: ["account-1", "account-2"],
       fromDate: "2026-06-01",
@@ -152,6 +153,7 @@ describe("ZernioClient publishing", () => {
       "/api/v1/accounts/health?platform=twitter",
       "/api/v1/accounts/account-1/health",
       "/api/v1/posts/post-1",
+      "/api/v1/posts?accountId=account-1&platform=twitter&page=2&limit=25&source=external&sortBy=created-desc",
       "/api/v1/accounts/follower-stats?accountIds=account-1%2Caccount-2&fromDate=2026-06-01&toDate=2026-07-01&granularity=daily",
     ]);
   });
