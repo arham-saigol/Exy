@@ -1,0 +1,55 @@
+{
+  "name": "exy",
+  "version": "0.1.0",
+  "description": "Self-hosted specialist agent for X/Twitter growth",
+  "type": "module",
+  "private": true,
+  "files": [
+    "dist",
+    ".agents",
+    "HEARTBEAT.md",
+    "README.md",
+    "docs",
+    "scripts",
+    "LICENSE"
+  ],
+  "bin": {
+    "exy": "dist/cli/index.js"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prebuild": "npm run clean",
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm test",
+    "start": "node dist/cli/index.js gateway"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.80.6",
+    "@earendil-works/pi-coding-agent": "0.80.6",
+    "@inquirer/prompts": "8.5.2",
+    "croner": "10.0.1",
+    "discord.js": "14.26.5",
+    "typebox": "1.1.38",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  },
+  "overrides": {
+    "discord.js": {
+      "undici": "6.27.0"
+    },
+    "@discordjs/rest": {
+      "undici": "6.27.0"
+    }
+  }
+}
