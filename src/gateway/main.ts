@@ -242,6 +242,7 @@ export async function runGateway(paths: ExyPaths): Promise<number> {
         messageId: turn.messageId,
         attachmentUrls: turn.attachments.map((attachment) => attachment.url),
         signal: turn.signal,
+        onProgress: turn.onProgress,
       }),
     interruptConversation: (threadId) => runtime.interrupt(threadId),
     modelController: runtime,

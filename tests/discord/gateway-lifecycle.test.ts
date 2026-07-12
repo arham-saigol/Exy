@@ -274,7 +274,170 @@ describe("DiscordGateway lifecycle", () => {
     expect(onChunkDelivered).not.toHaveBeenCalled();
     await gateway.stop();
   });
+
+  it("delivers ordered progress before the final response", async () => {
+    const client = new FakeClient();
+    const delivered: string[] = [];
+    const send = vi.fn(async (payload: { content: string }) => {
+      const index = delivered.push(payload.content) - 1;
+      return {
+        id: `message-${index}`,
+        edit: vi.fn(async (next: { content: string }) => {
+          delivered[index] = next.content;
+        }),
+      };
+    });
+    const thread = {
+      id: "thread-1",
+      guildId: "guild-1",
+      parentId: "parent-1",
+      isThread: () => true,
+      sendTyping: vi.fn(async () => undefined),
+      send,
+    };
+    const gateway = new DiscordGateway(gatewayOptions(client, {
+      progressUpdateIntervalMilliseconds: 60_000,
+      runConversation: vi.fn(async (turn) => {
+        await turn.onProgress({ type: "assistant_text", delta: "I’ll inspect that." });
+        await turn.onProgress({ type: "tool_status", message: "Looking at your X profile" });
+        await turn.onProgress({ type: "assistant_text", delta: "The profile is connected." });
+        return "Complete final response.";
+      }),
+    }));
+    await gateway.start();
+
+    await runConversationDirectly(gateway, thread, threadMessage(thread));
+
+    expect(delivered).toEqual([
+      "I’ll inspect that.",
+      "*Looking at your X profile…*",
+      "The profile is connected.",
+      "Complete final response.",
+    ]);
+    expect(delivered.filter((content) => content === "Complete final response.")).toHaveLength(1);
+    await gateway.stop();
+  });
+
+  it("keeps typing alive until a long run settles, then stops", async () => {
+    const client = new FakeClient();
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => (finish = resolve));
+    const thread = {
+      id: "thread-1",
+      guildId: "guild-1",
+      parentId: "parent-1",
+      isThread: () => true,
+      sendTyping: vi.fn(async () => undefined),
+      send: vi.fn(async () => ({ id: "message", edit: vi.fn() })),
+    };
+    const gateway = new DiscordGateway(gatewayOptions(client, {
+      typingIntervalMilliseconds: 5,
+      runConversation: vi.fn(async () => {
+        await pending;
+        return "Done.";
+      }),
+    }));
+    await gateway.start();
+
+    const running = runConversationDirectly(gateway, thread, threadMessage(thread));
+    await new Promise((resolve) => setTimeout(resolve, 24));
+    expect(thread.sendTyping.mock.calls.length).toBeGreaterThanOrEqual(3);
+    finish();
+    await running;
+    const stoppedAt = thread.sendTyping.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(thread.sendTyping).toHaveBeenCalledTimes(stoppedAt);
+    await gateway.stop();
+  });
+
+  it("continues to the final response when a progress API call fails", async () => {
+    const client = new FakeClient();
+    const delivered: string[] = [];
+    let first = true;
+    const thread = {
+      id: "thread-1",
+      guildId: "guild-1",
+      parentId: "parent-1",
+      isThread: () => true,
+      sendTyping: vi.fn(async () => undefined),
+      send: vi.fn(async (payload: { content: string }) => {
+        if (first) {
+          first = false;
+          throw new Error("transient progress failure");
+        }
+        delivered.push(payload.content);
+        return { id: "message", edit: vi.fn() };
+      }),
+    };
+    const onDelivered = vi.fn(async () => undefined);
+    const gateway = new DiscordGateway(gatewayOptions(client, {
+      runConversation: vi.fn(async (turn) => {
+        await turn.onProgress({ type: "tool_status", message: "Searching the web" });
+        return { content: "Final survives.", onDelivered };
+      }),
+    }));
+    await gateway.start();
+
+    await runConversationDirectly(gateway, thread, threadMessage(thread));
+
+    expect(delivered).toEqual(["Final survives."]);
+    expect(onDelivered).toHaveBeenCalledOnce();
+    await gateway.stop();
+  });
+
+  it("stops progress and typing on cancellation without sending a final response", async () => {
+    const client = new FakeClient();
+    const delivered: string[] = [];
+    const thread = {
+      id: "thread-1",
+      guildId: "guild-1",
+      parentId: "parent-1",
+      isThread: () => true,
+      sendTyping: vi.fn(async () => undefined),
+      send: vi.fn(async (payload: { content: string }) => {
+        delivered.push(payload.content);
+        return { id: "message", edit: vi.fn() };
+      }),
+    };
+    const gateway = new DiscordGateway(gatewayOptions(client, {
+      typingIntervalMilliseconds: 5,
+      runConversation: vi.fn(async (turn) => {
+        await turn.onProgress({ type: "tool_status", message: "Searching X" });
+        await new Promise<void>((_resolve, reject) => {
+          turn.signal.addEventListener("abort", () => {
+            const error = new Error("cancelled");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
+        });
+        return "Must not be sent";
+      }),
+    }));
+    await gateway.start();
+
+    const running = runConversationDirectly(gateway, thread, threadMessage(thread));
+    await vi.waitFor(() => expect(delivered).toEqual(["*Searching X…*"]));
+    expect(gateway.interrupt("thread-1")).toBe(true);
+    await running;
+    const stoppedAt = thread.sendTyping.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    expect(delivered).toEqual(["*Searching X…*"]);
+    expect(thread.sendTyping).toHaveBeenCalledTimes(stoppedAt);
+    expect(gateway.interrupt("thread-1")).toBe(false);
+    await gateway.stop();
+  });
 });
+
+async function runConversationDirectly(
+  gateway: DiscordGateway,
+  thread: unknown,
+  message: unknown,
+): Promise<void> {
+  await (gateway as unknown as {
+    enqueueConversation(thread: unknown, message: unknown): Promise<void>;
+  }).enqueueConversation(thread, message);
+}
 
 function threadMessage(thread: { id: string; isThread(): boolean }): unknown {
   return {

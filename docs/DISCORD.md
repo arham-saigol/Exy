@@ -74,6 +74,10 @@ thread merely because somebody mentions the bot there.
 
 Bot messages and all messages from unauthorized users are ignored. Responses suppress
 Discord mentions and are split safely below Discord's 2,000-character message limit.
+While a turn is active, Exy refreshes Discord's typing indicator, edits batched assistant
+text into the thread as it arrives, and shows short descriptions of tool activity. Raw
+tool arguments, internal names, credentials, and model reasoning are never rendered.
+Progress failures are isolated from the authoritative final-response delivery.
 
 ## First routing test
 

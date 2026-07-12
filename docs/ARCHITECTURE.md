@@ -13,8 +13,10 @@ an HTTP administration server.
 4. Pi runs with the persisted model/reasoning preference and a lean X-growth system
    prompt. Only focused Exy and automation tools are exposed; Pi's built-in shell and
    file tools are disabled.
-5. The completed exchange is submitted to the same Supermemory namespace and the final
-   response is returned to the thread.
+5. User-visible assistant text and sanitized tool-start statuses flow through one ordered
+   Discord progress stream while a typing keepalive remains active.
+6. The final response is returned to the thread, then the completed exchange is submitted
+   to the same Supermemory namespace only after final delivery succeeds.
 
 Separate Discord threads have separate Pi sessions and queues. Long-term memory is
 isolated by both authorized Discord user and connected Zernio X account. Scheduled-job
