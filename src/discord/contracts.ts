@@ -54,7 +54,7 @@ export interface DiscordConversationTurn {
   attachments: readonly DiscordAttachment[];
   createdAt: Date;
   signal: AbortSignal;
-  /** Ordered user-visible agent output and sanitized activity statuses. */
+  /** Ordered, sanitized activity statuses. Model-authored text is final-only. */
   onProgress: AgentProgressSink;
 }
 
@@ -128,6 +128,4 @@ export interface DiscordGatewayOptions {
   threadAutoArchiveMinutes?: 60 | 1440 | 4320 | 10080;
   /** Test/operations override; defaults to eight seconds. */
   typingIntervalMilliseconds?: number;
-  /** Test/operations override; defaults to 750 milliseconds. */
-  progressUpdateIntervalMilliseconds?: number;
 }

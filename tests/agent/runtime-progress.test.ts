@@ -30,7 +30,7 @@ interface RuntimeProgressApi {
 }
 
 describe("ExyAgentRuntime progress", () => {
-  it("forwards only text deltas and sanitized tool starts in source order", async () => {
+  it("forwards sanitized tool starts but keeps model-authored text final-only", async () => {
     let listener: ((event: any) => void) | undefined;
     const session = {
       isStreaming: false,
@@ -46,7 +46,7 @@ describe("ExyAgentRuntime progress", () => {
         });
         listener?.({
           type: "message_update",
-          assistantMessageEvent: { type: "text_delta", delta: "I’ll look." },
+          assistantMessageEvent: { type: "text_delta", delta: "I published it.\n" },
         });
         listener?.({
           type: "tool_execution_start",
@@ -60,7 +60,10 @@ describe("ExyAgentRuntime progress", () => {
         });
         listener?.({
           type: "message_update",
-          assistantMessageEvent: { type: "text_delta", delta: "Found it." },
+          assistantMessageEvent: {
+            type: "text_delta",
+            delta: "https://x.com/unverified/status/123",
+          },
         });
       }),
       abort: vi.fn(async () => undefined),
@@ -90,15 +93,18 @@ describe("ExyAgentRuntime progress", () => {
     });
 
     expect(progress).toEqual([
-      { type: "assistant_text", delta: "I’ll look." },
       { type: "tool_status", message: "Searching X" },
       { type: "tool_status", message: "Searching X" },
-      { type: "assistant_text", delta: "Found it." },
     ]);
     expect(JSON.stringify(progress)).not.toContain("private reasoning");
     expect(JSON.stringify(progress)).not.toContain("secret query");
     expect(JSON.stringify(progress)).not.toContain("private-cursor");
     expect(JSON.stringify(progress)).not.toContain("sk-secret");
-    expect(result.content).toBe("I’ll look.Found it.");
+    expect(JSON.stringify(progress)).not.toContain("I published it");
+    expect(JSON.stringify(progress)).not.toContain("x.com/unverified");
+    expect(result.content).toBe(
+      "[Publication success claim omitted: Zernio did not confirm publication.]\n"
+      + "[X post omitted: it was not passed through Exy's reply-opportunity verifier]",
+    );
   });
 });

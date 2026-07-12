@@ -495,26 +495,13 @@ export class DiscordGateway {
       const progress = new DiscordProgressStream(
         {
           send: async (content) => {
-            const sent = await thread.send({
+            await thread.send({
               content,
               allowedMentions: { parse: [] },
             });
-            return {
-              edit: async (nextContent) => {
-                await sent.edit({
-                  content: nextContent,
-                  allowedMentions: { parse: [] },
-                });
-              },
-            };
           },
         },
         this.logger,
-        {
-          ...(this.options.progressUpdateIntervalMilliseconds === undefined
-            ? {}
-            : { updateIntervalMilliseconds: this.options.progressUpdateIntervalMilliseconds }),
-        },
       );
       try {
         if (message.guildId === null || thread.parentId === null) {

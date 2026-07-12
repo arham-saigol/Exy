@@ -275,7 +275,7 @@ describe("DiscordGateway lifecycle", () => {
     await gateway.stop();
   });
 
-  it("delivers ordered progress before the final response", async () => {
+  it("delivers sanitized statuses before the final response exactly once", async () => {
     const client = new FakeClient();
     const delivered: string[] = [];
     const send = vi.fn(async (payload: { content: string }) => {
@@ -296,11 +296,8 @@ describe("DiscordGateway lifecycle", () => {
       send,
     };
     const gateway = new DiscordGateway(gatewayOptions(client, {
-      progressUpdateIntervalMilliseconds: 60_000,
       runConversation: vi.fn(async (turn) => {
-        await turn.onProgress({ type: "assistant_text", delta: "I’ll inspect that." });
         await turn.onProgress({ type: "tool_status", message: "Looking at your X profile" });
-        await turn.onProgress({ type: "assistant_text", delta: "The profile is connected." });
         return "Complete final response.";
       }),
     }));
@@ -309,9 +306,7 @@ describe("DiscordGateway lifecycle", () => {
     await runConversationDirectly(gateway, thread, threadMessage(thread));
 
     expect(delivered).toEqual([
-      "I’ll inspect that.",
       "*Looking at your X profile…*",
-      "The profile is connected.",
       "Complete final response.",
     ]);
     expect(delivered.filter((content) => content === "Complete final response.")).toHaveLength(1);

@@ -241,7 +241,6 @@ export class ExyAgentRuntime {
       if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
         const delta = event.assistantMessageEvent.delta;
         output += delta;
-        emitProgress({ type: "assistant_text", delta });
       }
       if (event.type === "tool_execution_start") {
         emitProgress({
