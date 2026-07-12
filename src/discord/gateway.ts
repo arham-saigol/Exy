@@ -18,6 +18,7 @@ import {
 
 import { chunkDiscordMessage } from "./chunking.js";
 import { buildDiscordApplicationCommands } from "./commands.js";
+import { DiscordProgressStream } from "./progress.js";
 import type {
   DiscordAttachment,
   DiscordGatewayOptions,
@@ -55,6 +56,7 @@ const SAFE_RUNTIME_ERROR =
   "Exy couldn't complete that turn. Check `exy logs` for details.";
 const SAFE_THREAD_ERROR =
   "I couldn't create the Exy thread. Check the bot's channel permissions and `exy logs`.";
+const DEFAULT_TYPING_INTERVAL_MILLISECONDS = 8_000;
 
 export class DiscordGateway {
   private readonly options: DiscordGatewayOptions;
@@ -489,11 +491,24 @@ export class DiscordGateway {
 
       const controller = new AbortController();
       this.activeRuns.set(thread.id, controller);
+      let stopTyping = (): void => undefined;
+      const progress = new DiscordProgressStream(
+        {
+          send: async (content) => {
+            await thread.send({
+              content,
+              allowedMentions: { parse: [] },
+            });
+          },
+        },
+        this.logger,
+      );
       try {
         if (message.guildId === null || thread.parentId === null) {
           throw new Error("The Discord thread has no guild or parent channel");
         }
         await thread.sendTyping().catch(() => undefined);
+        stopTyping = this.startTypingKeepalive(thread);
         const result = await this.options.runConversation({
           threadId: thread.id,
           guildId: message.guildId,
@@ -504,8 +519,10 @@ export class DiscordGateway {
           attachments: projectAttachments(message),
           createdAt: message.createdAt,
           signal: controller.signal,
+          onProgress: (event) => progress.handle(event),
         });
 
+        await progress.finish();
         const response = typeof result === "string" ? { content: result } : result;
         if (!controller.signal.aborted && response !== undefined && response.content.trim() !== "") {
           try {
@@ -519,6 +536,7 @@ export class DiscordGateway {
           await response?.onDeliveryFailed?.();
         }
       } catch (error: unknown) {
+        await progress.finish();
         if (!controller.signal.aborted && !isAbortError(error)) {
           this.logger.error("Discord conversation failed", errorLogContext(error));
           await this.sendThreadText(thread, this.toPublicErrorMessage(error)).catch(
@@ -526,11 +544,34 @@ export class DiscordGateway {
           );
         }
       } finally {
+        stopTyping();
         if (this.activeRuns.get(thread.id) === controller) {
           this.activeRuns.delete(thread.id);
         }
       }
     });
+  }
+
+  private startTypingKeepalive(thread: AnyThreadChannel): () => void {
+    const interval = this.options.typingIntervalMilliseconds
+      ?? DEFAULT_TYPING_INTERVAL_MILLISECONDS;
+    let stopped = false;
+    let timer: NodeJS.Timeout | undefined;
+    const refresh = async (): Promise<void> => {
+      if (stopped) return;
+      await thread.sendTyping().catch((error: unknown) => {
+        this.logger.debug("Discord typing refresh failed", errorLogContext(error));
+      });
+      if (stopped) return;
+      timer = setTimeout(() => void refresh(), interval);
+      timer.unref?.();
+    };
+    timer = setTimeout(() => void refresh(), interval);
+    timer.unref?.();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
   }
 
   private async sendThreadText(

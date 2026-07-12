@@ -4,6 +4,7 @@ import type {
 } from "discord.js";
 
 import type { DiscordConfig } from "../core/types.js";
+import type { AgentProgressSink } from "../core/progress.js";
 
 export type DiscordThreadStatus = "creating" | "active" | "failed";
 
@@ -53,6 +54,8 @@ export interface DiscordConversationTurn {
   attachments: readonly DiscordAttachment[];
   createdAt: Date;
   signal: AbortSignal;
+  /** Ordered, sanitized activity statuses. Model-authored text is final-only. */
+  onProgress: AgentProgressSink;
 }
 
 export interface DiscordConversationResponse {
@@ -123,4 +126,6 @@ export interface DiscordGatewayOptions {
   registerCommands?: DiscordCommandRegistrar;
   modelCacheMilliseconds?: number;
   threadAutoArchiveMinutes?: 60 | 1440 | 4320 | 10080;
+  /** Test/operations override; defaults to eight seconds. */
+  typingIntervalMilliseconds?: number;
 }

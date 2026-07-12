@@ -8,6 +8,7 @@ import {
 import type { ConfigStore } from "../config/store.js";
 import type { ExyPaths } from "../config/paths.js";
 import type { ModelPreference, Scope } from "../core/types.js";
+import type { AgentProgressEvent, AgentProgressSink } from "../core/progress.js";
 import type { PublicationApprovalRepository } from "../db/approvals.js";
 import type { CandidateMappingRepository } from "../db/candidates.js";
 import type { JsonValue } from "../db/json.js";
@@ -27,6 +28,7 @@ import type { PiModelService, SelectableModel } from "./model-service.js";
 import { memoryContainerTag } from "./scope.js";
 import { EXY_SYSTEM_PROMPT } from "./system-prompt.js";
 import { createExyTools, type StageReplyOpportunityResult } from "./tools.js";
+import { formatToolStatus } from "./tool-status.js";
 import {
   extractXPostIds,
   guardRawXSearchNarrative,
@@ -67,6 +69,7 @@ export interface RunAgentTurnInput {
   attachmentUrls?: readonly string[];
   signal?: AbortSignal;
   automated?: boolean;
+  onProgress?: AgentProgressSink;
 }
 
 export interface AgentTurnDelivery {
@@ -224,9 +227,26 @@ export class ExyAgentRuntime {
     let alreadyRecommendedCount = 0;
     let publishSummary: string | undefined;
     let publicationConfirmed = false;
+    let progressQueue = Promise.resolve();
+    const emitProgress = (event: AgentProgressEvent): void => {
+      if (input.onProgress === undefined) return;
+      progressQueue = progressQueue
+        .then(() => input.onProgress?.(event))
+        .then(() => undefined)
+        .catch((error: unknown) => {
+          this.options.logger.warn("Agent progress delivery failed", safeContext(error));
+        });
+    };
     const unsubscribe = live.session.subscribe((event) => {
       if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-        output += event.assistantMessageEvent.delta;
+        const delta = event.assistantMessageEvent.delta;
+        output += delta;
+      }
+      if (event.type === "tool_execution_start") {
+        emitProgress({
+          type: "tool_status",
+          message: formatToolStatus(event.toolName, event.args),
+        });
       }
       if (event.type === "tool_execution_end") {
         const data = toolResultJson(event.result);
@@ -262,9 +282,11 @@ export class ExyAgentRuntime {
     let promptSucceeded = false;
     try {
       await live.session.prompt(prompt);
+      await progressQueue;
       if (signal.aborted) throw abortError();
       promptSucceeded = true;
     } finally {
+      await progressQueue;
       signal.removeEventListener("abort", abort);
       unsubscribe();
       this.options.threads.touch(input.threadId);
