@@ -9,8 +9,8 @@ import type { ConfigStore } from "../config/store.js";
 import type { ExyPaths } from "../config/paths.js";
 import type { ModelPreference, Scope } from "../core/types.js";
 import type { AgentProgressEvent, AgentProgressSink } from "../core/progress.js";
-import type { PublicationApprovalRepository } from "../db/approvals.js";
 import type { CandidateMappingRepository } from "../db/candidates.js";
+import type { PublicationDraftRepository } from "../db/drafts.js";
 import type { JsonValue } from "../db/json.js";
 import type { DiscordThreadRepository, DiscordThreadRecord } from "../db/threads.js";
 import type { ModelPreferenceRepository } from "../db/state.js";
@@ -22,13 +22,12 @@ import type { ScheduledJobStore } from "../scheduler/index.js";
 import type { SkillRegistry } from "../skills/index.js";
 import type { ReplyOpportunityVerifier } from "../verifier/reply-verifier.js";
 import type { PresentReplyOpportunityInput } from "../verifier/reply-verifier.js";
-import { acceptApprovalFromMessage } from "./approval-code.js";
 import { createAutomationTools } from "./automation-tools.js";
 import type { PiModelService, SelectableModel } from "./model-service.js";
 import { memoryContainerTag } from "./scope.js";
 import { EXY_SYSTEM_PROMPT } from "./system-prompt.js";
 import { createExyTools, type StageReplyOpportunityResult } from "./tools.js";
-import { formatToolStatus } from "./tool-status.js";
+import { formatActivatedSkillStatus, formatToolStatus } from "./tool-status.js";
 import {
   extractXPostIds,
   guardRawXSearchNarrative,
@@ -50,7 +49,7 @@ export interface ExyAgentRuntimeOptions {
   modelPreferences: ModelPreferenceRepository;
   candidates: CandidateMappingRepository;
   verifier: ReplyOpportunityVerifier;
-  approvals: PublicationApprovalRepository;
+  drafts: PublicationDraftRepository;
   jobs: ScheduledJobStore;
   skills: SkillRegistry;
   xquik: XquikClient;
@@ -200,29 +199,20 @@ export class ExyAgentRuntime {
     await live.session.reload();
 
     const scope: Scope = { discordUserId: live.record.discordUserId, xAccountId: live.record.xAccountId };
-    let content = input.content;
-    let approvalNotice = "";
-    if (!input.automated) {
-      const accepted = acceptApprovalFromMessage(this.options.approvals, scope, content);
-      if (accepted) {
-        content = accepted.sanitizedMessage;
-        approvalNotice = `\n<approval_status>User explicitly approved publication ID ${accepted.approval.id}. The immutable approved payload may now be published with publish_approved_x.</approval_status>`;
-      }
-    }
-
+    const content = input.content;
     const memory = await this.recallMemory(scope, content, signal);
     if (signal.aborted) throw abortError();
     const attachments = input.attachmentUrls?.length
       ? `\n<discord_attachments>${input.attachmentUrls.map((url) => `\n- ${url}`).join("")}</discord_attachments>`
       : "";
-    const prompt = `${memory}${approvalNotice}${attachments}\n<user_message>${content}</user_message>`;
+    const prompt = `${memory}${attachments}\n<user_message>${content}</user_message>`;
 
-    let output = "";
+    const assistantMessages: string[] = [];
+    let activeAssistantMessage = -1;
+    const streamedAssistantMessages = new Set<number>();
     const recommendationTurn = this.beginRecommendationTurn(input.threadId);
     const allowedPostIds = new Set<string>();
-    const preparedSummaries: string[] = [];
-    const preparedApprovalIds: string[] = [];
-    const originalDraftSummaries: string[] = [];
+    const exactDraftContents: string[] = [];
     let rawXSearchPerformed = false;
     let alreadyRecommendedCount = 0;
     let publishSummary: string | undefined;
@@ -238,11 +228,48 @@ export class ExyAgentRuntime {
         });
     };
     const unsubscribe = live.session.subscribe((event) => {
+      if (event.type === "message_start" && event.message.role === "assistant") {
+        activeAssistantMessage = assistantMessages.push("") - 1;
+      }
       if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
         const delta = event.assistantMessageEvent.delta;
-        output += delta;
+        if (activeAssistantMessage < 0) activeAssistantMessage = assistantMessages.push("") - 1;
+        assistantMessages[activeAssistantMessage] += delta;
       }
-      if (event.type === "tool_execution_start") {
+      if (
+        event.type === "message_end"
+        && event.message.role === "assistant"
+        && event.message.content.some((item) => item.type === "toolCall")
+        && activeAssistantMessage >= 0
+      ) {
+        const intermediate = assistantMessages[activeAssistantMessage]?.trim() ?? "";
+        if (intermediate !== "") {
+          const searchGuarded = guardRawXSearchNarrative(
+            intermediate,
+            rawXSearchPerformed,
+            alreadyRecommendedCount,
+          );
+          const preserveExactFencedContent = exactDraftContents.length > 0;
+          const preserveGatewayFencedContent = preserveExactFencedContent || recommendationTurn.staged.size > 0;
+          const claimGuarded = guardUnconfirmedPublicationClaims(
+            searchGuarded,
+            publicationConfirmed,
+            { preserveFencedContent: preserveGatewayFencedContent, preserveExactContent: exactDraftContents },
+          );
+          const safeIntermediate = guardUnverifiedXPostUrls(
+            claimGuarded,
+            scope,
+            this.options.verifier,
+            allowedPostIds,
+            { preserveFencedContent: preserveExactFencedContent, preserveExactContent: exactDraftContents },
+          ).trim();
+          if (safeIntermediate !== "" && input.onProgress !== undefined) {
+            emitProgress({ type: "assistant_text", message: safeIntermediate });
+            streamedAssistantMessages.add(activeAssistantMessage);
+          }
+        }
+      }
+      if (event.type === "tool_execution_start" && event.toolName !== "activate_agent_skill") {
         emitProgress({
           type: "tool_status",
           message: formatToolStatus(event.toolName, event.args),
@@ -250,6 +277,10 @@ export class ExyAgentRuntime {
       }
       if (event.type === "tool_execution_end") {
         const data = toolResultJson(event.result);
+        if (event.toolName === "activate_agent_skill" && !event.isError) {
+          const status = formatActivatedSkillStatus(data?.name);
+          if (status !== undefined) emitProgress({ type: "tool_status", message: status });
+        }
         if (event.toolName === "search_x" && !event.isError) rawXSearchPerformed = true;
         if (
           event.toolName === "recommend_reply_opportunity"
@@ -257,12 +288,7 @@ export class ExyAgentRuntime {
           && data?.presented === false
           && data.alreadyRecommended === true
         ) alreadyRecommendedCount += 1;
-        if (event.toolName === "prepare_x_publication" && !event.isError && data?.prepared === true) {
-          preparedSummaries.push(formatPreparedPublication(data));
-          if (typeof data.approvalId === "string") preparedApprovalIds.push(data.approvalId);
-          for (const postId of extractXPostIds(JSON.stringify(data))) allowedPostIds.add(postId);
-        }
-        if (event.toolName === "publish_approved_x" || event.toolName === "inspect_x_publication_status") {
+        if (event.toolName === "publish_current_x_draft" || event.toolName === "inspect_x_publication_status") {
           publishSummary = event.isError
             ? `Publication was not confirmed.\n${safeOutcomeField(toolResultText(event.result), "The provider operation failed; review `exy logs`.")}`
             : formatPublicationOutcome(data);
@@ -271,9 +297,9 @@ export class ExyAgentRuntime {
             for (const postId of extractXPostIds(JSON.stringify(data))) allowedPostIds.add(postId);
           }
         }
-        if (event.toolName === "render_original_post_draft" && !event.isError) {
+        if (event.toolName === "save_x_draft" && !event.isError && data?.stored === true) {
           for (const postId of extractXPostIds(JSON.stringify(event.result))) allowedPostIds.add(postId);
-          if (typeof data?.exactContent === "string") originalDraftSummaries.push(formatOriginalDraft(data.exactContent));
+          if (typeof data?.exactContent === "string") exactDraftContents.push(data.exactContent);
         }
       }
     });
@@ -293,34 +319,26 @@ export class ExyAgentRuntime {
       this.recommendationTurns.delete(input.threadId);
       if (!promptSucceeded) {
         this.releaseRecommendationTurn(recommendationTurn);
-        for (const approvalId of preparedApprovalIds) this.options.approvals.cancel(approvalId, scope);
       }
     }
 
     const recommendationSummaries = [...recommendationTurn.staged.values()].map(formatReplyRecommendation);
+    const output = assistantMessages
+      .filter((_message, index) => !streamedAssistantMessages.has(index))
+      .map((message) => message.trim())
+      .filter((message) => message !== "")
+      .join("\n\n");
     const guardedModelOutput = guardRawXSearchNarrative(
-      output.trim() || "I completed the turn but Pi returned no user-visible text.",
-      rawXSearchPerformed,
+      output,
+      rawXSearchPerformed && recommendationSummaries.length === 0 && exactDraftContents.length === 0,
       alreadyRecommendedCount,
     );
-    const visibleOutput = publishSummary
-      ?? (preparedSummaries.length > 0
-        ? preparedSummaries.join("\n\n")
-        : originalDraftSummaries.length > 0
-          ? originalDraftSummaries.join("\n\n")
-          : recommendationSummaries.length > 0
-            ? recommendationSummaries.join("\n\n")
-            : guardedModelOutput);
-    const preserveExactFencedContent = publishSummary === undefined && (
-      preparedSummaries.length > 0
-      || originalDraftSummaries.length > 0
-    );
-    const preserveGatewayFencedContent = preserveExactFencedContent || (
-      publishSummary === undefined
-      && preparedSummaries.length === 0
-      && originalDraftSummaries.length === 0
-      && recommendationSummaries.length > 0
-    );
+    const visibleOutput = guardedModelOutput
+      || publishSummary
+      || recommendationSummaries.join("\n\n")
+      || "I completed the turn but Pi returned no user-visible text.";
+    const preserveExactFencedContent = exactDraftContents.length > 0;
+    const preserveGatewayFencedContent = preserveExactFencedContent || recommendationSummaries.length > 0;
     const visiblePostIds = extractXPostIds(visibleOutput);
     const deliveredRecommendations: StagedRecommendation[] = [];
     for (const staged of recommendationTurn.staged.values()) {
@@ -334,16 +352,16 @@ export class ExyAgentRuntime {
     const claimGuardedOutput = guardUnconfirmedPublicationClaims(
       visibleOutput,
       publicationConfirmed,
-      { preserveFencedContent: preserveGatewayFencedContent },
+      { preserveFencedContent: preserveGatewayFencedContent, preserveExactContent: exactDraftContents },
     );
     const finalOutput = guardUnverifiedXPostUrls(
       claimGuardedOutput,
       scope,
       this.options.verifier,
       allowedPostIds,
-      { preserveFencedContent: preserveExactFencedContent },
+      { preserveFencedContent: preserveExactFencedContent, preserveExactContent: exactDraftContents },
     );
-    return this.createDelivery(scope, input, content, finalOutput, deliveredRecommendations, preparedApprovalIds);
+    return this.createDelivery(scope, input, content, finalOutput, deliveredRecommendations);
   }
 
   private beginRecommendationTurn(threadId: string): RecommendationTurn {
@@ -437,7 +455,6 @@ export class ExyAgentRuntime {
     userContent: string,
     content: string,
     recommendations: readonly StagedRecommendation[],
-    preparedApprovalIds: readonly string[],
   ): AgentTurnDelivery {
     let settled = false;
     const committed = new Set<string>();
@@ -490,7 +507,6 @@ export class ExyAgentRuntime {
           commitObserved();
         } finally {
           release();
-          for (const approvalId of preparedApprovalIds) this.options.approvals.cancel(approvalId, scope);
         }
       },
     };
@@ -538,8 +554,7 @@ export class ExyAgentRuntime {
       exa: this.options.exa,
       supermemory: this.options.supermemory,
       candidates: this.options.candidates,
-      approvals: this.options.approvals,
-      xAccountLabel: config.providers.zernioAccountUsername ?? record.xAccountId,
+      drafts: this.options.drafts,
       stageReplyOpportunity: (input) => this.stageReplyOpportunity(threadId, scope, record.sessionId, input),
       dryRunPublishing: this.options.dryRunPublishing ?? false,
       extraTools: automationTools,
@@ -721,49 +736,16 @@ function toolResultText(value: unknown): string | undefined {
   return text || undefined;
 }
 
-export function formatPreparedPublication(data: Record<string, unknown>): string {
-  const content = typeof data.exactContent === "string" ? data.exactContent : undefined;
-  const target = typeof data.target === "string" ? data.target : undefined;
-  const account = typeof data.account === "string" ? data.account : undefined;
-  const code = typeof data.approvalCode === "string" ? data.approvalCode : undefined;
-  const expiresAt = typeof data.expiresAt === "string" ? data.expiresAt : undefined;
-  if (content === undefined || target === undefined || code === undefined || expiresAt === undefined) {
-    return "Publication was not prepared safely because the approval details were incomplete. Do not approve or publish it.";
-  }
-  const longestFence = Math.max(3, ...([...content.matchAll(/`+/gu)].map((match) => (match[0]?.length ?? 0) + 1)));
-  const fence = "`".repeat(longestFence);
-  return [
-    "Publication prepared, but not published.",
-    ...(account === undefined ? [] : [`X account: ${account}`]),
-    `Target: ${target}`,
-    "Exact content:",
-    fence,
-    content,
-    fence,
-    `Expires: ${expiresAt}`,
-    `To approve this exact item in a later message, send: \`approve ${code.replaceAll("`", "'")}\``,
-  ].join("\n");
-}
-
 export function formatPublicationOutcome(data: Record<string, unknown> | undefined): string {
-  const record = typeof data?.providerRecordId === "string"
-    ? `\nProvider record: ${safeOutcomeField(data.providerRecordId, "unknown")}`
-    : "";
   if (data?.confirmed !== true) {
     const status = safeOutcomeField(data?.providerStatus, "unknown");
     const message = safeOutcomeField(data?.message, "Zernio did not confirm the configured X target as published.");
-    return `Publication was not confirmed.\nProvider status: ${status}${record}\n${message}`;
+    return `Publication was not confirmed.\nProvider status: ${status}\n${message}`;
   }
   const status = safeOutcomeField(data.providerStatus, "published");
   const message = safeOutcomeField(data.message, "Zernio confirmed the configured X target as published.");
   const url = typeof data.providerPostUrl === "string" ? `\nPost: ${data.providerPostUrl}` : "";
-  return `Zernio confirmed publication for the configured X account.\nProvider status: ${status}${record}\n${message}${url}`;
-}
-
-function formatOriginalDraft(content: string): string {
-  const longestFence = Math.max(3, ...([...content.matchAll(/`+/gu)].map((match) => (match[0]?.length ?? 0) + 1)));
-  const fence = "`".repeat(longestFence);
-  return ["Original post draft (not published):", fence, content, fence].join("\n");
+  return `Zernio confirmed publication for the configured X account.\nProvider status: ${status}\n${message}${url}`;
 }
 
 function formatReplyRecommendation(staged: StagedRecommendation): string {

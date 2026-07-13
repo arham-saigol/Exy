@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createExyTools } from "../../src/agent/tools.js";
 import type { StageReplyOpportunityResult } from "../../src/agent/tools.js";
-import { formatPreparedPublication, formatPublicationOutcome } from "../../src/agent/runtime.js";
+import { formatPublicationOutcome } from "../../src/agent/runtime.js";
 import { guardUnconfirmedPublicationClaims, guardUnverifiedXPostUrls } from "../../src/agent/output-guard.js";
-import { PublicationApprovalRepository } from "../../src/db/approvals.js";
 import { CandidateMappingRepository } from "../../src/db/candidates.js";
 import { ExyDatabase } from "../../src/db/database.js";
+import { PublicationDraftRepository } from "../../src/db/drafts.js";
 import { ExaClient } from "../../src/providers/exa.js";
 import { SupermemoryClient } from "../../src/providers/supermemory.js";
 import { XquikClient } from "../../src/providers/xquik.js";
@@ -26,7 +26,7 @@ function dependencies(options: { dryRun?: boolean; analytics?: boolean; zernioFe
   const database = new ExyDatabase(":memory:");
   databases.push(database);
   const scope = { discordUserId: "discord-user", xAccountId: "x-account" };
-  const approvals = new PublicationApprovalRepository(database);
+  const drafts = new PublicationDraftRepository(database);
   const stageReplyOpportunity = vi.fn((): StageReplyOpportunityResult => ({
     status: "staged",
     presented: true,
@@ -39,7 +39,7 @@ function dependencies(options: { dryRun?: boolean; analytics?: boolean; zernioFe
   return {
     database,
     scope,
-    approvals,
+    drafts,
     candidates,
     stageReplyOpportunity,
     tools: createExyTools({
@@ -51,8 +51,7 @@ function dependencies(options: { dryRun?: boolean; analytics?: boolean; zernioFe
       exa: new ExaClient("exa-key"),
       supermemory: new SupermemoryClient("supermemory-key"),
       candidates,
-      approvals,
-      xAccountLabel: "@configured",
+      drafts,
       stageReplyOpportunity,
       dryRunPublishing: options.dryRun ?? false,
     }),
@@ -74,19 +73,25 @@ describe("focused Exy tools", () => {
       .toMatchObject({ count: 0 });
   });
 
-  it("consumes an exact approval in dry-run mode without calling Zernio", async () => {
-    const deps = dependencies({ dryRun: true });
-    const prepared = deps.approvals.prepare({
+  it("consumes the exact current draft in dry-run mode without calling Zernio publish", async () => {
+    const deps = dependencies({
+      dryRun: true,
+      zernioFetch: async () => new Response(JSON.stringify({ valid: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    });
+    const saved = deps.drafts.save({
       ...deps.scope,
+      threadId: "thread",
       kind: "original",
       payload: { kind: "original", content: "Exact dry-run post", accountId: deps.scope.xAccountId },
     });
-    deps.approvals.approve(prepared.approval.id, prepared.approvalToken, deps.scope);
-    const tool = deps.tools.find((candidate) => candidate.name === "publish_approved_x")!;
-    const result = await tool.execute("call", { approvalId: prepared.approval.id } as never, undefined, undefined, undefined as never);
+    const tool = deps.tools.find((candidate) => candidate.name === "publish_current_x_draft")!;
+    const result = await tool.execute("call", {} as never, undefined, undefined, undefined as never);
 
     expect(toolJson(result)).toMatchObject({ confirmed: false, providerStatus: "dry_run" });
-    expect(deps.approvals.get(prepared.approval.id)?.state).toBe("consumed");
+    expect(deps.drafts.getForScope(saved.id, deps.scope).state).toBe("consumed");
   });
 
   it.each([false, true])("exposes and scopes Zernio account tools when analytics sync is %s", async (analytics) => {
@@ -161,24 +166,25 @@ describe("focused Exy tools", () => {
       .rejects.toThrow("configured X account is not available");
   });
 
-  it("marks an original-post draft without touching the reply verifier", async () => {
-    const deps = dependencies();
-    const tool = deps.tools.find((candidate) => candidate.name === "render_original_post_draft")!;
+  it("stores an original-post draft without publishing or touching the reply verifier", async () => {
+    const publishFetch = vi.fn(async () => new Response(JSON.stringify({ valid: true }), { status: 200 }));
+    const deps = dependencies({ zernioFetch: publishFetch });
+    const tool = deps.tools.find((candidate) => candidate.name === "save_x_draft")!;
     const result = await tool.execute("call", {
+      kind: "original",
       content: "An original draft linking https://x.com/i/status/123",
     } as never, undefined, undefined, undefined as never);
-    expect(toolJson(result)).toMatchObject({ kind: "original_draft", published: false });
+    expect(toolJson(result)).toMatchObject({ stored: true, kind: "original", published: false });
+    expect(deps.drafts.getCurrent("thread", deps.scope)?.payload).toMatchObject({
+      content: "An original draft linking https://x.com/i/status/123",
+    });
+    expect(publishFetch).not.toHaveBeenCalled();
     expect(deps.database.connection.prepare("SELECT count(*) AS count FROM reply_recommendations").get())
       .toMatchObject({ count: 0 });
   });
 
-  it("stages a searched reply target when preparation is called directly", async () => {
-    const deps = dependencies({
-      zernioFetch: async () => new Response(JSON.stringify({ valid: true }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    });
+  it("stages a searched reply target when its draft is saved", async () => {
+    const deps = dependencies();
     deps.candidates.put({
       sessionId: "session",
       candidateRef: "xc_target",
@@ -186,7 +192,7 @@ describe("focused Exy tools", () => {
       canonicalUrl: "https://x.com/i/web/status/1900123456789012345",
       candidate: { candidateRef: "xc_target", text: "Candidate text", metrics: {} },
     });
-    const tool = deps.tools.find((candidate) => candidate.name === "prepare_x_publication")!;
+    const tool = deps.tools.find((candidate) => candidate.name === "save_x_draft")!;
     const result = await tool.execute("call", {
       kind: "reply",
       content: "Exact proposed reply",
@@ -194,7 +200,7 @@ describe("focused Exy tools", () => {
     } as never, undefined, undefined, undefined as never);
 
     expect(toolJson(result)).toMatchObject({
-      prepared: true,
+      stored: true,
       target: "https://x.com/i/web/status/1900123456789012345",
     });
     expect(deps.stageReplyOpportunity).toHaveBeenCalledWith(expect.objectContaining({
@@ -203,13 +209,8 @@ describe("focused Exy tools", () => {
     }));
   });
 
-  it("does not prepare a reply target reserved by another delivery", async () => {
-    const deps = dependencies({
-      zernioFetch: async () => new Response(JSON.stringify({ valid: true }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    });
+  it("does not store a reply target reserved by another delivery", async () => {
+    const deps = dependencies();
     deps.candidates.put({
       sessionId: "session",
       candidateRef: "xc_pending",
@@ -225,27 +226,22 @@ describe("focused Exy tools", () => {
       canonicalUrl: "https://x.com/i/web/status/1900123456789012346",
       instruction: "pending elsewhere",
     });
-    const tool = deps.tools.find((candidate) => candidate.name === "prepare_x_publication")!;
+    const tool = deps.tools.find((candidate) => candidate.name === "save_x_draft")!;
     const result = toolJson(await tool.execute("call", {
       kind: "reply",
       content: "Exact proposed reply",
       candidateRef: "xc_pending",
     } as never, undefined, undefined, undefined as never));
 
-    expect(result).toMatchObject({ prepared: false, verifierPending: true });
+    expect(result).toMatchObject({ stored: false, verifierPending: true });
     expect(result).not.toHaveProperty("target");
-    expect(deps.database.connection.prepare("SELECT count(*) AS count FROM publication_approvals").get())
+    expect(deps.database.connection.prepare("SELECT count(*) AS count FROM publication_drafts").get())
       .toMatchObject({ count: 0 });
   });
 
-  it("prepares a direct verified reply URL without an ephemeral Xquik mapping", async () => {
-    const deps = dependencies({
-      zernioFetch: async () => new Response(JSON.stringify({ valid: true }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    });
-    const tool = deps.tools.find((candidate) => candidate.name === "prepare_x_publication")!;
+  it("stores a direct verified reply URL without an ephemeral Xquik mapping", async () => {
+    const deps = dependencies();
+    const tool = deps.tools.find((candidate) => candidate.name === "save_x_draft")!;
     const result = toolJson(await tool.execute("call", {
       kind: "reply",
       content: "Reply after a process restart",
@@ -253,17 +249,69 @@ describe("focused Exy tools", () => {
     } as never, undefined, undefined, undefined as never));
 
     expect(result).toMatchObject({
-      prepared: true,
+      stored: true,
       target: "https://x.com/i/web/status/1900123456789012347",
     });
     expect(deps.stageReplyOpportunity).toHaveBeenCalledWith(expect.objectContaining({
       post: "1900123456789012347",
       suggestedReply: "Reply after a process restart",
     }));
-    expect(deps.approvals.get(result.approvalId as string)).toMatchObject({
+    expect(deps.drafts.getCurrent("thread", deps.scope)).toMatchObject({
       kind: "reply",
       targetPostId: "1900123456789012347",
     });
+  });
+
+  it("publishes the exact current draft once without another confirmation or public ID", async () => {
+    const requests: Request[] = [];
+    const deps = dependencies({
+      zernioFetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        requests.push(request.clone());
+        if (new URL(request.url).pathname.endsWith("/tools/validate/post")) {
+          return new Response(JSON.stringify({ valid: true }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({
+          post: {
+            _id: "internal-record-1",
+            status: "published",
+            platforms: [{
+              platform: "twitter",
+              accountId: deps.scope.xAccountId,
+              status: "published",
+              platformPostId: "1900999999999999999",
+              platformPostUrl: "https://x.com/exy/status/1900999999999999999",
+            }],
+          },
+        }), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    const exactDraft = "Exact bytes — keep  spacing and punctuation!";
+    await deps.tools.find((tool) => tool.name === "save_x_draft")!.execute("save", {
+      kind: "original",
+      content: exactDraft,
+    } as never, undefined, undefined, undefined as never);
+
+    const publish = deps.tools.find((tool) => tool.name === "publish_current_x_draft")!;
+    const result = toolJson(await publish.execute("publish", {} as never, undefined, undefined, undefined as never));
+    const publishRequests = requests.filter((request) => new URL(request.url).pathname.endsWith("/posts"));
+    const body = await publishRequests[0]!.json() as Record<string, unknown>;
+
+    expect(publishRequests).toHaveLength(1);
+    expect(body).toMatchObject({ content: exactDraft, publishNow: true });
+    expect(result).toMatchObject({ confirmed: true, providerStatus: "published" });
+    expect(result).not.toHaveProperty("providerRecordId");
+    expect(result).not.toHaveProperty("providerPostId");
+    expect(JSON.stringify(result)).not.toContain("internal-record-1");
+    await expect(publish.execute("publish-again", {} as never, undefined, undefined, undefined as never))
+      .rejects.toThrow(/no current draft/i);
+    expect(requests.filter((request) => new URL(request.url).pathname.endsWith("/posts"))).toHaveLength(1);
   });
 });
 
@@ -278,60 +326,28 @@ describe("gateway-rendered publication messages", () => {
     })).toBe([
       "Publication was not confirmed.",
       "Provider status: pending",
-      "Provider record: record-1",
       "Zernio has not published the target yet.",
     ].join("\n"));
   });
 
-  it("renders the exact prepared content, target, expiry, and approval command", () => {
-    const rendered = formatPreparedPublication({
-      prepared: true,
-      exactContent: "A precise post",
-      target: "new original X post",
-      account: "@configured",
-      expiresAt: "2026-07-11T01:00:00.000Z",
-      approvalCode: "EXY_APPROVAL:id:token",
-    });
-    expect(rendered).toContain("A precise post");
-    expect(rendered).toContain("new original X post");
-    expect(rendered).toContain("@configured");
-    expect(rendered).toContain("2026-07-11T01:00:00.000Z");
-    expect(rendered).toContain("approve EXY_APPROVAL:id:token");
-    expect(rendered).toContain("not published");
-  });
-
-  it("does not corrupt exact prepared content that resembles a success claim", () => {
+  it("does not corrupt exact draft content that resembles a success claim", () => {
     const exactContent = "Tweet published\r\nDone - it's live on X\r\nPosted!";
-    const rendered = formatPreparedPublication({
-      prepared: true,
-      exactContent,
-      target: "new original X post",
-      expiresAt: "2026-07-11T01:00:00.000Z",
-      approvalCode: "EXY_APPROVAL:id:token",
-    });
     expect(guardUnconfirmedPublicationClaims(
-      rendered,
+      `I'd post this:\n\n${exactContent}`,
       false,
-      { preserveFencedContent: true },
+      { preserveExactContent: [exactContent] },
     )).toContain(exactContent);
   });
 
-  it("does not corrupt X-looking text inside exact prepared content", () => {
+  it("does not corrupt X-looking text inside exact draft content", () => {
     const deps = dependencies();
     const exactContent = `Keep these bytes: https://x.com/a/status/0 and https://x.com/a/status/${"1".repeat(41)}`;
-    const rendered = formatPreparedPublication({
-      prepared: true,
-      exactContent,
-      target: "new original X post",
-      expiresAt: "2026-07-11T01:00:00.000Z",
-      approvalCode: "EXY_APPROVAL:id:token",
-    });
     const guarded = guardUnverifiedXPostUrls(
-      rendered,
+      exactContent,
       deps.scope,
       new ReplyOpportunityVerifier(deps.database),
       new Set(),
-      { preserveFencedContent: true },
+      { preserveExactContent: [exactContent] },
     );
     expect(guarded).toContain(exactContent);
   });

@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PublicationApprovalRepository } from "../../src/db/approvals.js";
 import { ExyDatabase } from "../../src/db/database.js";
+import { PublicationDraftRepository } from "../../src/db/drafts.js";
 import { KeyValueRepository, ModelPreferenceRepository } from "../../src/db/state.js";
 import { DiscordThreadRepository, SqliteDiscordThreadStore } from "../../src/db/threads.js";
 
@@ -44,7 +44,7 @@ describe("persistent state", () => {
       reasoning: "high",
     });
     expect(reopened.connection.prepare("SELECT count(*) AS count FROM schema_migrations").get())
-      .toMatchObject({ count: 2 });
+      .toMatchObject({ count: 3 });
     reopened.close();
   });
 
@@ -107,74 +107,97 @@ describe("persistent state", () => {
   });
 });
 
-describe("publication approvals", () => {
-  it("requires its explicit token and can be consumed only once", () => {
+describe("publication drafts", () => {
+  it("keeps one exact current draft per thread and consumes it only once", () => {
     let now = 1_000;
     const database = new ExyDatabase(databasePath());
-    const approvals = new PublicationApprovalRepository(database, () => now);
+    const drafts = new PublicationDraftRepository(database, () => now);
     const scope = { discordUserId: "u", xAccountId: "x" };
-    const prepared = approvals.prepare({
+    const first = drafts.save({
       ...scope,
+      threadId: "thread-1",
       kind: "reply",
       targetPostId: "123",
-      payload: { text: "specific approved reply" },
-      ttlMs: 10_000,
+      payload: { text: "first reply" },
     });
-    expect(prepared.approval.state).toBe("prepared");
-    expect(() => approvals.approve(prepared.approval.id, prepared.approvalToken, {
-      discordUserId: "another-user",
-      xAccountId: "x",
-    })).toThrow(/another account scope/i);
-    expect(() => approvals.approve(prepared.approval.id, "wrong", scope)).toThrow(/token/i);
-    expect(approvals.approve(prepared.approval.id, prepared.approvalToken, scope).state).toBe("approved");
     now += 1;
-    const consumed = approvals.consume(prepared.approval.id, scope);
-    expect(consumed.state).toBe("consumed");
-    expect(consumed.payload).toEqual({ text: "specific approved reply" });
-    expect(() => approvals.consume(prepared.approval.id, scope)).toThrow(/consumed/i);
-    database.close();
-  });
-
-  it("commits the expired state while rejecting approval", () => {
-    let now = 1_000;
-    const database = new ExyDatabase(databasePath());
-    const approvals = new PublicationApprovalRepository(database, () => now);
-    const scope = { discordUserId: "u", xAccountId: "x" };
-    const prepared = approvals.prepare({
+    const second = drafts.save({
       ...scope,
-      kind: "original",
-      payload: { text: "draft" },
-      ttlMs: 1_000,
+      threadId: "thread-1",
+      kind: "reply",
+      targetPostId: "123",
+      payload: { text: "specific current reply" },
     });
-    now = 2_000;
-    expect(() => approvals.approve(prepared.approval.id, prepared.approvalToken, scope)).toThrow(/expired/i);
-    expect(approvals.get(prepared.approval.id)?.state).toBe("expired");
+    expect(drafts.getForScope(first.id, scope).state).toBe("superseded");
+    expect(drafts.getCurrent("thread-1", scope)?.id).toBe(second.id);
+    const consumed = drafts.consumeCurrent("thread-1", scope);
+    expect(consumed.state).toBe("consumed");
+    expect(consumed.payload).toEqual({ text: "specific current reply" });
+    expect(() => drafts.consumeCurrent("thread-1", scope)).toThrow(/no current draft/i);
     database.close();
   });
 
-  it("binds a provider record to exactly one consumed approval and scope", () => {
+  it("isolates current drafts by Discord thread and account scope", () => {
     const database = new ExyDatabase(databasePath());
-    const approvals = new PublicationApprovalRepository(database);
+    const drafts = new PublicationDraftRepository(database);
     const scope = { discordUserId: "u", xAccountId: "x" };
-    const prepared = approvals.prepare({ ...scope, kind: "original", payload: { text: "post" } });
-    approvals.approve(prepared.approval.id, prepared.approvalToken, scope);
-    approvals.consume(prepared.approval.id, scope);
-    expect(approvals.recordProviderAttempt(prepared.approval.id, scope, {
+    drafts.save({
+      ...scope,
+      threadId: "thread-a",
+      kind: "original",
+      payload: { text: "draft a" },
+    });
+    expect(drafts.getCurrent("thread-b", scope)).toBeUndefined();
+    expect(() => drafts.getCurrent("thread-a", { discordUserId: "u", xAccountId: "other" }))
+      .toThrow(/another account scope/i);
+    database.close();
+  });
+
+  it("rejects provider attempts for a draft that remains current", () => {
+    const database = new ExyDatabase(databasePath());
+    const drafts = new PublicationDraftRepository(database);
+    const scope = { discordUserId: "u", xAccountId: "x" };
+    const saved = drafts.save({ ...scope, threadId: "thread", kind: "original", payload: { text: "post" } });
+    expect(() => drafts.recordProviderAttempt(saved.id, scope, {
+      providerRecordId: "zernio-record-1",
+      providerStatus: "pending",
+      confirmed: false,
+    })).toThrow(/requires a consumed publication draft/i);
+    database.close();
+  });
+
+  it("returns the latest consumed draft for a thread and scope", () => {
+    const database = new ExyDatabase(databasePath());
+    const drafts = new PublicationDraftRepository(database);
+    const scope = { discordUserId: "u", xAccountId: "x" };
+    drafts.save({ ...scope, threadId: "thread", kind: "original", payload: { text: "post" } });
+    const consumed = drafts.consumeCurrent("thread", scope);
+    expect(drafts.getLatestConsumed("thread", scope)).toEqual(consumed);
+    database.close();
+  });
+
+  it("binds a provider record to exactly one consumed draft and scope", () => {
+    const database = new ExyDatabase(databasePath());
+    const drafts = new PublicationDraftRepository(database);
+    const scope = { discordUserId: "u", xAccountId: "x" };
+    const saved = drafts.save({ ...scope, threadId: "thread", kind: "original", payload: { text: "post" } });
+    drafts.consumeCurrent("thread", scope);
+    expect(drafts.recordProviderAttempt(saved.id, scope, {
       providerRecordId: "zernio-record-1",
       providerStatus: "pending",
       confirmed: false,
     })).toMatchObject({ providerRecordId: "zernio-record-1", confirmed: false });
-    expect(approvals.recordProviderAttempt(prepared.approval.id, scope, {
+    expect(drafts.recordProviderAttempt(saved.id, scope, {
       providerRecordId: "zernio-record-1",
       providerStatus: "published",
       confirmed: true,
     })).toMatchObject({ providerStatus: "published", confirmed: true });
-    expect(() => approvals.recordProviderAttempt(prepared.approval.id, scope, {
+    expect(() => drafts.recordProviderAttempt(saved.id, scope, {
       providerRecordId: "another-record",
       providerStatus: "published",
       confirmed: true,
     })).toThrow(/does not match/i);
-    expect(() => approvals.getProviderAttempt(prepared.approval.id, { discordUserId: "u", xAccountId: "other" }))
+    expect(() => drafts.getProviderAttempt(saved.id, { discordUserId: "u", xAccountId: "other" }))
       .toThrow(/another account scope/i);
     database.close();
   });

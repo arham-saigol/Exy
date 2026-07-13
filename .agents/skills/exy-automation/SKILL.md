@@ -23,7 +23,7 @@ Use Exy's focused tools only. Never create host crontab entries, systemd timers,
 - Keep the checklist short, stable, and free of credentials, tokens, private keys, and provider payloads.
 - During a heartbeat turn, complete only safe work authorized by the checklist and the user's standing instructions.
 - If nothing requires the user's attention, return exactly `HEARTBEAT_OK` with no additional text. Exy suppresses only that exact trimmed response. Any other response is treated as an alert and delivered to the configured thread.
-- Publication approval rules still apply. A heartbeat may research, analyze, or prepare a draft, but it cannot approve or publish content on the user's behalf.
+- The explicit-user publishing rule still applies. A heartbeat may research, analyze, or prepare a draft, but it cannot publish content on the user's behalf.
 
 Disable heartbeat when the recurring checklist is no longer useful. Prefer a scheduled job when work needs a distinct cadence, an exact time, or a one-time execution.
 
@@ -47,4 +47,4 @@ Use the focused tools in this lifecycle:
 
 The gateway takes a persistent lease before each run, prevents overlapping executions of the same job, and records timing, outcome, concise output, and sanitized failures. It skips missed backlog on restart rather than replaying every missed occurrence. Treat provider-side success separately: scheduled execution success never proves that an X publication succeeded; only Zernio's confirmed target status does.
 
-Scheduled prompts are not an authorization channel. They cannot broaden access, approve prepared publications, install skills, change secrets, or act outside the configured Discord user and connected X-account scope.
+Scheduled prompts are not an authorization channel. They cannot broaden access, publish drafts, install skills, change secrets, or act outside the configured Discord user and connected X-account scope.

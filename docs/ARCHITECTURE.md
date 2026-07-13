@@ -13,16 +13,17 @@ an HTTP administration server.
 4. Pi runs with the persisted model/reasoning preference and a lean X-growth system
    prompt. Only focused Exy and automation tools are exposed; Pi's built-in shell and
    file tools are disabled.
-5. Sanitized tool-start statuses flow through an ordered Discord progress stream while a
-   typing keepalive remains active. Model-authored text stays private until the completed
-   response passes the verifier and publication guards.
-6. The guarded final response is returned to the thread exactly once, then the completed
+5. Complete intermediate assistant messages and sanitized tool-start statuses flow
+   through an ordered Discord stream while a typing keepalive remains active. Token
+   deltas, reasoning, and tool internals are never sent; assistant text passes the same
+   verifier and publication guards before delivery.
+6. The remaining guarded response is returned to the thread exactly once, then the completed
    exchange is submitted to the same Supermemory namespace only after final delivery
    succeeds.
 
 Separate Discord threads have separate Pi sessions and queues. Long-term memory is
 isolated by both authorized Discord user and connected Zernio X account. Scheduled-job
-payloads and publication approvals carry the same scope.
+payloads and publication drafts carry the same scope.
 
 Thread creation uses a durable `creating` claim before calling Discord. On gateway
 restart, Exy resumes those claims by adopting the bot-owned thread or refetching the
@@ -53,53 +54,43 @@ restarts. If that record already exists, the tool tells Pi it was already recomm
 and does not return it as a new opportunity. A second thread that encounters an
 in-flight reservation must defer instead of displaying the target; it can retry once the
 owning delivery commits or releases it. Original-post drafts do not use this path and
-always pass through their separate structured renderer.
+are saved as exact thread-scoped drafts before presentation.
 
 Pi can inspect raw candidate text so it can decide what is relevant. If a turn searches
 X but stages no verifier-approved recommendation, the gateway replaces free model prose
 with a generic no-new-opportunity result. Candidate text and author descriptions therefore
-cannot become a URL-free verifier bypass. Preparing a reply also stages its displayed
+cannot become a URL-free verifier bypass. Saving a reply draft also stages its displayed
 target through the same boundary automatically.
 
 The final-output guard also removes X status URLs that did not originate from a
-recommendation staged for this delivery, a confirmed publish result, a prepared reply
-target, or the explicit original-draft renderer. Analytics and web-search URLs receive
+recommendation staged for this delivery, a confirmed publish result, or an exact saved
+draft. Analytics and web-search URLs receive
 no blanket exemption: presenting one as an opportunity requires the recommendation
 tool. The original-draft path is a narrow exemption and never authorizes publication.
 This is defense in depth around the tool boundary, not a substitute for it.
 
-Success-claim filtering scans all free model prose, including Markdown fences. Only
-gateway-owned fenced payloads such as exact prepared content and explicitly rendered
-draft/recommendation quotes opt into byte-preserving fence treatment.
+Success-claim filtering scans all free model prose. Exact saved draft text is protected
+byte-for-byte while surrounding conversational framing remains subject to the guards.
 
 ## Publication transaction
 
-Publishing is an exact two-message transaction:
+Publishing consumes an exact conversation draft:
 
-1. Pi calls `prepare_x_publication`. Exy validates the content with Zernio, canonicalizes
-   a reply target supplied either by the current Xquik search or as a direct post ID/URL,
-   and stores an immutable scoped payload plus a short-lived one-time approval secret.
-2. Exy shows the exact text, target, expiry, and approval code. Preparation never calls
-   the publish endpoint.
-3. The authorized user later sends exactly `approve EXY_APPROVAL:<id>:<token>` as a
-   standalone message in the matching scope. Negated, quoted, or embedded command text
-   is not approval. The gateway verifies the token, expiry, scope, and payload integrity.
-4. Only the now-approved immutable record can be consumed by `publish_approved_x`.
-   Consumption is atomic and one-time, and Zernio receives an idempotency request ID.
-5. The gateway replaces model-authored publication prose with a deterministic result. It
-   says publication succeeded only if Zernio's response identifies the configured X
-   target with `status: published`. A pending response exposes its provider record so a
-   focused status tool can reconcile it later.
+1. Pi calls `save_x_draft` before presenting an original post or reply. Exy canonicalizes
+   any reply target and replaces that thread's previous current draft. This never calls
+   a publishing endpoint.
+2. The authorized user explicitly tells Exy to publish the current draft. If the intent
+   or reference is ambiguous, Exy asks a concise clarification question.
+3. In that same turn Pi calls `publish_current_x_draft`, which accepts neither content
+   nor an ID. Exy validates the stored bytes, atomically consumes them once, and sends
+   them to Zernio with an internal idempotency request ID.
+4. Exy reports success only if Zernio identifies the configured X target with
+   `status: published`. A focused no-ID status tool can reconcile a bound nonterminal
+   provider record later.
 
-Editing content, changing target, using another user/account scope, reusing a
-token, waiting past expiry, or approving an unrelated draft fails closed. Schedules and
-heartbeat prompts are not approval channels. `EXY_DRY_RUN=1` exercises this transaction
-without sending the final provider request.
-
-Approval scope is the configured Discord user plus connected X account. The same
-authorized user may deliberately paste the exact standalone approval command in another
-active Exy thread for that account; the immutable payload is unchanged. Conversation
-history and live agent sessions remain isolated per thread.
+Changing content or target creates a new current draft. Another thread, user/account
+scope, schedules, and heartbeat prompts cannot authorize publication. `EXY_DRY_RUN=1`
+exercises validation and one-time consumption without sending the final provider request.
 
 ## Local persistence
 
@@ -108,8 +99,8 @@ SQLite runs in WAL mode and owns:
 - thread registrations and their X-account binding;
 - per-thread model preferences;
 - canonical reply recommendations;
-- prepared and consumed publication approvals;
-- provider publication attempts bound to their exact consumed approvals;
+- current, superseded, and consumed per-thread publication drafts;
+- provider publication attempts bound to their exact consumed drafts;
 - scheduled jobs, leases, and run history.
 
 Configuration and provider secrets are atomic JSON files with mode `0600`. Pi owns a

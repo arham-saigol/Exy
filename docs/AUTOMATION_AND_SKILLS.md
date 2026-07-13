@@ -29,9 +29,9 @@ real checklist, keep items concise, stable, safe, and free of credentials. If a 
 run returns exactly `HEARTBEAT_OK`, no Discord message is sent; any other response is
 delivered to the configured thread.
 
-Heartbeat instructions never approve publication. A check can research, inspect
-analytics, or prepare a draft, but the authorized user must still approve that exact
-prepared item in a later message.
+Heartbeat instructions never authorize publication. A check can research, inspect
+analytics, or prepare a draft, but only a later explicit instruction from the authorized
+user can publish that exact draft.
 
 ## Scheduled jobs
 
@@ -88,7 +88,7 @@ sudo -u exy env HOME=/var/lib/exy DISABLE_TELEMETRY=1 \
 
 Review a third-party skill before activating or installing it. A skill supplies agent
 instructions; it does not receive an automatic permission grant. Exy's focused tools,
-scope checks, verifier, and exact publication approval remain enforced.
+scope checks, verifier, and explicit-user publishing rule remain enforced.
 
 For a private repository, authenticate Git or GitHub CLI outside Exy and use the access
 method supported by that repository. Setup deliberately does not request a GitHub token

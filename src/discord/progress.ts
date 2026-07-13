@@ -8,7 +8,7 @@ export interface DiscordProgressLogger {
   warn(message: string, context?: Readonly<Record<string, unknown>>): void;
 }
 
-/** Ordered delivery of sanitized activity statuses for one active Discord run. */
+/** Ordered delivery of complete assistant messages and sanitized activity statuses. */
 export class DiscordProgressStream {
   private operations: Promise<void> = Promise.resolve();
   private finished = false;
@@ -20,7 +20,8 @@ export class DiscordProgressStream {
 
   handle(event: AgentProgressEvent): Promise<void> {
     if (this.finished) return Promise.resolve();
-    return this.enqueue(() => this.sendSafely(`*${event.message}…*`));
+    const content = event.type === "tool_status" ? `*${event.message}…*` : event.message;
+    return this.enqueue(() => this.sendSafely(content));
   }
 
   async finish(): Promise<void> {
@@ -42,7 +43,7 @@ export class DiscordProgressStream {
       await this.transport.send(content);
     } catch (error) {
       this.logger.warn("Discord progress delivery failed", {
-        operation: "send tool status",
+        operation: "send ordered progress",
         errorName: error instanceof Error ? error.name : typeof error,
       });
     }

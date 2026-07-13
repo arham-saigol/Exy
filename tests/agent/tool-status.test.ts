@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatToolStatus } from "../../src/agent/tool-status.js";
+import { formatActivatedSkillStatus, formatToolStatus } from "../../src/agent/tool-status.js";
 
 describe("formatToolStatus", () => {
   it("maps X and web tools to polished user-facing activity", () => {
@@ -10,6 +10,8 @@ describe("formatToolStatus", () => {
     expect(formatToolStatus("list_x_post_history", {})).toBe("Reviewing past posts");
     expect(formatToolStatus("search_x", {})).toBe("Searching X");
     expect(formatToolStatus("search_web", {})).toBe("Searching the web");
+    expect(formatToolStatus("save_x_draft", {})).toBe("Saving your X draft");
+    expect(formatToolStatus("publish_current_x_draft", {})).toBe("Publishing your X draft");
   });
 
   it("never exposes unknown names, arguments, IDs, URLs, or credentials", () => {
@@ -35,5 +37,14 @@ describe("formatToolStatus", () => {
     });
     expect(status).toBe("Viewing X analytics");
     expect(status).not.toContain("secret");
+  });
+
+  it("names a successfully activated skill without accepting arbitrary output", () => {
+    expect(formatActivatedSkillStatus("exy-automation"))
+      .toBe("Used the `exy-automation` skill");
+    expect(formatActivatedSkillStatus("Secret skill\ncredential=123"))
+      .toBeUndefined();
+    expect(formatActivatedSkillStatus({ name: "exy-automation" }))
+      .toBeUndefined();
   });
 });

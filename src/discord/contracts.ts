@@ -54,7 +54,7 @@ export interface DiscordConversationTurn {
   attachments: readonly DiscordAttachment[];
   createdAt: Date;
   signal: AbortSignal;
-  /** Ordered, sanitized activity statuses. Model-authored text is final-only. */
+  /** Ordered, safe message-level assistant output and sanitized activity statuses. */
   onProgress: AgentProgressSink;
 }
 

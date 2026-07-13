@@ -19,10 +19,11 @@ function harness(options: { failSends?: number } = {}) {
 }
 
 describe("DiscordProgressStream", () => {
-  it("preserves sanitized status order", async () => {
+  it("preserves complete assistant messages and sanitized status order", async () => {
     const { stream, messages } = harness();
 
     await Promise.all([
+      stream.handle({ type: "assistant_text", message: "Absolutely—I’ll draft that." }),
       stream.handle({ type: "tool_status", message: "Searching X" }),
       stream.handle({ type: "tool_status", message: "Reading a web page" }),
       stream.handle({ type: "tool_status", message: "Saving this for later" }),
@@ -30,6 +31,7 @@ describe("DiscordProgressStream", () => {
     await stream.finish();
 
     expect(messages).toEqual([
+      "Absolutely—I’ll draft that.",
       "*Searching X…*",
       "*Reading a web page…*",
       "*Saving this for later…*",

@@ -9,10 +9,10 @@ import {
   DiscordThreadRepository,
   ExyDatabase,
   ModelPreferenceRepository,
-  PublicationApprovalRepository,
+  PublicationDraftRepository,
   SqliteDiscordThreadStore,
 } from "../db/index.js";
-import { ApprovalError } from "../db/approvals.js";
+import { DraftError } from "../db/drafts.js";
 import { chunkDiscordMessage, DiscordGateway } from "../discord/index.js";
 import { ExaClient, SupermemoryClient, XquikClient, ZernioClient } from "../providers/index.js";
 import { readHeartbeatDocument, ScheduledJobStore, SchedulerEngine } from "../scheduler/index.js";
@@ -84,7 +84,7 @@ async function sendToDiscordThread(
 }
 
 function publicError(error: unknown): string {
-  if (error instanceof ProviderError || error instanceof ApprovalError) return safeErrorMessage(error);
+  if (error instanceof ProviderError || error instanceof DraftError) return safeErrorMessage(error);
   return "Exy could not complete that operation. Check `exy logs` for the sanitized diagnostic.";
 }
 
@@ -107,7 +107,7 @@ export async function runGateway(paths: ExyPaths): Promise<number> {
   const modelPreferences = new ModelPreferenceRepository(database);
   const candidates = new CandidateMappingRepository(database);
   const verifier = new ReplyOpportunityVerifier(database);
-  const approvals = new PublicationApprovalRepository(database);
+  const drafts = new PublicationDraftRepository(database);
   const jobs = new ScheduledJobStore(database);
   const skills = new SkillRegistry(paths.skillsDir);
   const xquik = new XquikClient(secrets.xquikApiKey);
@@ -150,7 +150,7 @@ export async function runGateway(paths: ExyPaths): Promise<number> {
     modelPreferences,
     candidates,
     verifier,
-    approvals,
+    drafts,
     jobs,
     skills,
     xquik,
