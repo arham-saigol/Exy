@@ -22,6 +22,8 @@ const TOOL_STATUSES: Readonly<Record<string, string>> = {
   update_heartbeat: "Updating recurring work",
 };
 
+const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+
 /**
  * Convert internal tool activity to a short, safe status. Tool arguments are
  * deliberately used only for allowlisted enum branches and are never rendered.
@@ -33,6 +35,12 @@ export function formatToolStatus(toolName: string, args: unknown): string {
       : "Viewing X analytics";
   }
   return TOOL_STATUSES[toolName] ?? "Working on the next step";
+}
+
+/** Format only a canonical skill name returned by a successful activation. */
+export function formatActivatedSkillStatus(name: unknown): string | undefined {
+  if (typeof name !== "string" || name.length > 64 || !SKILL_NAME.test(name)) return undefined;
+  return `Used the \`${name}\` skill`;
 }
 
 function analyticsMode(args: unknown): "followers" | "posts" | undefined {

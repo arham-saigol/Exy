@@ -30,6 +30,66 @@ interface RuntimeProgressApi {
 }
 
 describe("ExyAgentRuntime progress", () => {
+  it("shows the validated skill name after a skill is activated", async () => {
+    let listener: ((event: any) => void) | undefined;
+    const session = {
+      isStreaming: false,
+      reload: vi.fn(async () => undefined),
+      subscribe: vi.fn((next: (event: any) => void) => {
+        listener = next;
+        return () => undefined;
+      }),
+      prompt: vi.fn(async () => {
+        listener?.({
+          type: "tool_execution_start",
+          toolName: "activate_agent_skill",
+          args: { name: "raw-model-value-must-not-be-rendered" },
+        });
+        listener?.({
+          type: "tool_execution_end",
+          toolName: "activate_agent_skill",
+          isError: false,
+          result: {
+            content: [{
+              type: "text",
+              text: JSON.stringify({ name: "exy-automation", instructions: "private instructions" }),
+            }],
+          },
+        });
+      }),
+      abort: vi.fn(async () => undefined),
+    };
+    const runtime = new ExyAgentRuntime({
+      threads: { touch: vi.fn() },
+      drafts: {},
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      verifier: {},
+    } as never) as unknown as RuntimeProgressApi;
+    runtime.getOrCreateSession = vi.fn(async () => ({
+      session,
+      record,
+      preference: { provider: "openai-codex", modelId: "model", reasoning: "low" },
+    }));
+    runtime.synchronizeSessionPreference = vi.fn(async () => undefined);
+    runtime.recallMemory = vi.fn(async () => "");
+    const progress: AgentProgressEvent[] = [];
+
+    await runtime.runTurnExclusive({
+      threadId: "thread-1",
+      content: "use the automation skill",
+      signal: new AbortController().signal,
+      onProgress: async (event) => {
+        progress.push(event);
+      },
+    });
+
+    expect(progress).toEqual([
+      { type: "tool_status", message: "Used the `exy-automation` skill" },
+    ]);
+    expect(JSON.stringify(progress)).not.toContain("raw-model-value");
+    expect(JSON.stringify(progress)).not.toContain("private instructions");
+  });
+
   it("forwards sanitized tool starts while guarding the ordered final response", async () => {
     let listener: ((event: any) => void) | undefined;
     const session = {

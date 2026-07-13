@@ -27,7 +27,7 @@ import type { PiModelService, SelectableModel } from "./model-service.js";
 import { memoryContainerTag } from "./scope.js";
 import { EXY_SYSTEM_PROMPT } from "./system-prompt.js";
 import { createExyTools, type StageReplyOpportunityResult } from "./tools.js";
-import { formatToolStatus } from "./tool-status.js";
+import { formatActivatedSkillStatus, formatToolStatus } from "./tool-status.js";
 import {
   extractXPostIds,
   guardRawXSearchNarrative,
@@ -249,12 +249,19 @@ export class ExyAgentRuntime {
             rawXSearchPerformed,
             alreadyRecommendedCount,
           );
-          const claimGuarded = guardUnconfirmedPublicationClaims(searchGuarded, publicationConfirmed);
+          const preserveExactFencedContent = exactDraftContents.length > 0;
+          const preserveGatewayFencedContent = preserveExactFencedContent || recommendationTurn.staged.size > 0;
+          const claimGuarded = guardUnconfirmedPublicationClaims(
+            searchGuarded,
+            publicationConfirmed,
+            { preserveFencedContent: preserveGatewayFencedContent, preserveExactContent: exactDraftContents },
+          );
           const safeIntermediate = guardUnverifiedXPostUrls(
             claimGuarded,
             scope,
             this.options.verifier,
             allowedPostIds,
+            { preserveFencedContent: preserveExactFencedContent, preserveExactContent: exactDraftContents },
           ).trim();
           if (safeIntermediate !== "" && input.onProgress !== undefined) {
             emitProgress({ type: "assistant_text", message: safeIntermediate });
@@ -262,7 +269,7 @@ export class ExyAgentRuntime {
           }
         }
       }
-      if (event.type === "tool_execution_start") {
+      if (event.type === "tool_execution_start" && event.toolName !== "activate_agent_skill") {
         emitProgress({
           type: "tool_status",
           message: formatToolStatus(event.toolName, event.args),
@@ -270,6 +277,10 @@ export class ExyAgentRuntime {
       }
       if (event.type === "tool_execution_end") {
         const data = toolResultJson(event.result);
+        if (event.toolName === "activate_agent_skill" && !event.isError) {
+          const status = formatActivatedSkillStatus(data?.name);
+          if (status !== undefined) emitProgress({ type: "tool_status", message: status });
+        }
         if (event.toolName === "search_x" && !event.isError) rawXSearchPerformed = true;
         if (
           event.toolName === "recommend_reply_opportunity"

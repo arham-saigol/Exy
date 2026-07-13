@@ -9,7 +9,8 @@ Exy is a self-hosted specialist agent for sustainable X/Twitter growth. It runs 
 - Discord mention-to-public-thread routing with one durable Pi conversation per thread.
 - Supermemory isolation by configured Discord user plus connected Zernio X account.
 - Xquik raw candidate search and a persistent, canonical-ID reply recommendation verifier.
-- Zernio content validation, exact one-time publication of conversation drafts, replies, original posts, and analytics.
+- Zernio content validation and exact one-time publication of conversation drafts, replies, and original posts.
+- Read-only Zernio analytics.
 - Exa search and page fetching.
 - SQLite-backed schedules, execution leases/history, heartbeat execution, and open Agent Skills discovery.
 - An idempotent Ubuntu setup wizard and lifecycle CLI backed by systemd.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatToolStatus } from "../../src/agent/tool-status.js";
+import { formatActivatedSkillStatus, formatToolStatus } from "../../src/agent/tool-status.js";
 
 describe("formatToolStatus", () => {
   it("maps X and web tools to polished user-facing activity", () => {
@@ -37,5 +37,14 @@ describe("formatToolStatus", () => {
     });
     expect(status).toBe("Viewing X analytics");
     expect(status).not.toContain("secret");
+  });
+
+  it("names a successfully activated skill without accepting arbitrary output", () => {
+    expect(formatActivatedSkillStatus("exy-automation"))
+      .toBe("Used the `exy-automation` skill");
+    expect(formatActivatedSkillStatus("Secret skill\ncredential=123"))
+      .toBeUndefined();
+    expect(formatActivatedSkillStatus({ name: "exy-automation" }))
+      .toBeUndefined();
   });
 });

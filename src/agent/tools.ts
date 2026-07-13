@@ -213,7 +213,7 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
     parameters: Type.Object({
       kind: Type.Union([Type.Literal("reply"), Type.Literal("original")]),
       content: Type.String({ minLength: 1, maxLength: 25_000 }),
-      candidateRef: Type.Optional(Type.String({ description: "For a searched reply target; mutually exclusive with post" })),
+      candidateRef: Type.Optional(Type.String({ minLength: 1, description: "For a searched reply target; mutually exclusive with post" })),
       post: Type.Optional(Type.String({ minLength: 1, maxLength: 500, description: "Direct reply target post ID or X status URL; mutually exclusive with candidateRef" })),
     }),
     execute: async (_id, input) => {

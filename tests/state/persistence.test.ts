@@ -153,6 +153,29 @@ describe("publication drafts", () => {
     database.close();
   });
 
+  it("rejects provider attempts for a draft that remains current", () => {
+    const database = new ExyDatabase(databasePath());
+    const drafts = new PublicationDraftRepository(database);
+    const scope = { discordUserId: "u", xAccountId: "x" };
+    const saved = drafts.save({ ...scope, threadId: "thread", kind: "original", payload: { text: "post" } });
+    expect(() => drafts.recordProviderAttempt(saved.id, scope, {
+      providerRecordId: "zernio-record-1",
+      providerStatus: "pending",
+      confirmed: false,
+    })).toThrow(/requires a consumed publication draft/i);
+    database.close();
+  });
+
+  it("returns the latest consumed draft for a thread and scope", () => {
+    const database = new ExyDatabase(databasePath());
+    const drafts = new PublicationDraftRepository(database);
+    const scope = { discordUserId: "u", xAccountId: "x" };
+    drafts.save({ ...scope, threadId: "thread", kind: "original", payload: { text: "post" } });
+    const consumed = drafts.consumeCurrent("thread", scope);
+    expect(drafts.getLatestConsumed("thread", scope)).toEqual(consumed);
+    database.close();
+  });
+
   it("binds a provider record to exactly one consumed draft and scope", () => {
     const database = new ExyDatabase(databasePath());
     const drafts = new PublicationDraftRepository(database);
