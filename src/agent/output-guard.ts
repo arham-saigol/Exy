@@ -22,7 +22,7 @@ export function guardUnverifiedXPostUrls(
   scope: Scope,
   _verifier: ReplyOpportunityVerifier,
   allowedPostIds: ReadonlySet<string>,
-  options: { preserveFencedContent?: boolean } = {},
+  options: { preserveFencedContent?: boolean; preserveExactContent?: readonly string[] } = {},
 ): string {
   const replaceUrls = (value: string) => value.replace(X_POST_URL, (url) => {
     try {
@@ -33,23 +33,25 @@ export function guardUnverifiedXPostUrls(
       return "[malformed X post URL omitted]";
     }
   });
-  return options.preserveFencedContent
-    ? transformLinesOutsideMarkdownFences(output, replaceUrls)
-    : replaceUrls(output);
+  return transformOutsideExactContent(output, options.preserveExactContent ?? [], (unprotected) =>
+    options.preserveFencedContent
+      ? transformLinesOutsideMarkdownFences(unprotected, replaceUrls)
+      : replaceUrls(unprotected));
 }
 
 export function guardUnconfirmedPublicationClaims(
   output: string,
   providerConfirmed: boolean,
-  options: { preserveFencedContent?: boolean } = {},
+  options: { preserveFencedContent?: boolean; preserveExactContent?: readonly string[] } = {},
 ): string {
   if (providerConfirmed) return output;
   const transform = (line: string) => PUBLICATION_SUCCESS_CLAIM.test(line)
     ? "[Publication success claim omitted: Zernio did not confirm publication.]"
     : line;
-  return options.preserveFencedContent
-    ? transformLinesOutsideMarkdownFences(output, transform)
-    : transformLinesPreservingEndings(output, transform);
+  return transformOutsideExactContent(output, options.preserveExactContent ?? [], (unprotected) =>
+    options.preserveFencedContent
+      ? transformLinesOutsideMarkdownFences(unprotected, transform)
+      : transformLinesPreservingEndings(unprotected, transform));
 }
 
 /**
@@ -99,4 +101,25 @@ function transformLinesPreservingEndings(output: string, transform: (line: strin
     .split(/(\r\n|\n|\r)/u)
     .map((line, index) => index % 2 === 1 ? line : transform(line))
     .join("");
+}
+
+function transformOutsideExactContent(
+  output: string,
+  exactContents: readonly string[],
+  transform: (value: string) => string,
+): string {
+  const protectedValues = [...new Set(exactContents.filter((value) => value !== ""))]
+    .sort((left, right) => right.length - left.length);
+  if (protectedValues.length === 0) return transform(output);
+  const placeholders = new Map<string, string>();
+  let protectedOutput = output;
+  protectedValues.forEach((value, index) => {
+    const placeholder = `\uE000EXY_EXACT_DRAFT_${index}\uE001`;
+    if (!protectedOutput.includes(value)) return;
+    protectedOutput = protectedOutput.replaceAll(value, placeholder);
+    placeholders.set(placeholder, value);
+  });
+  let transformed = transform(protectedOutput);
+  for (const [placeholder, value] of placeholders) transformed = transformed.replaceAll(placeholder, value);
+  return transformed;
 }

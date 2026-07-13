@@ -30,7 +30,7 @@ interface RuntimeProgressApi {
 }
 
 describe("ExyAgentRuntime progress", () => {
-  it("forwards sanitized tool starts but keeps model-authored text final-only", async () => {
+  it("forwards sanitized tool starts while guarding the ordered final response", async () => {
     let listener: ((event: any) => void) | undefined;
     const session = {
       isStreaming: false,
@@ -70,7 +70,7 @@ describe("ExyAgentRuntime progress", () => {
     };
     const runtime = new ExyAgentRuntime({
       threads: { touch: vi.fn() },
-      approvals: { cancel: vi.fn() },
+      drafts: {},
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       verifier: {},
     } as never) as unknown as RuntimeProgressApi;
@@ -106,5 +106,85 @@ describe("ExyAgentRuntime progress", () => {
       "[Publication success claim omitted: Zernio did not confirm publication.]\n"
       + "[X post omitted: it was not passed through Exy's reply-opportunity verifier]",
     );
+  });
+
+  it("keeps acknowledgement and framed draft text from separate assistant messages", async () => {
+    let listener: ((event: any) => void) | undefined;
+    const exactDraft = "Build trust before you chase reach.";
+    const session = {
+      isStreaming: false,
+      reload: vi.fn(async () => undefined),
+      subscribe: vi.fn((next: (event: any) => void) => {
+        listener = next;
+        return () => undefined;
+      }),
+      prompt: vi.fn(async () => {
+        listener?.({ type: "message_start", message: { role: "assistant", content: [] } });
+        listener?.({
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: "Absolutely—I’ll keep it concise." },
+        });
+        listener?.({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "text", text: "Absolutely—I’ll keep it concise." },
+              { type: "toolCall", name: "save_x_draft", arguments: { kind: "original", content: exactDraft } },
+            ],
+          },
+        });
+        listener?.({
+          type: "tool_execution_start",
+          toolName: "save_x_draft",
+          args: { kind: "original", content: exactDraft },
+        });
+        listener?.({
+          type: "tool_execution_end",
+          toolName: "save_x_draft",
+          isError: false,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ stored: true, exactContent: exactDraft }) }],
+          },
+        });
+        listener?.({ type: "message_start", message: { role: "assistant", content: [] } });
+        listener?.({
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: `I'd post this:\n\n${exactDraft}` },
+        });
+      }),
+      abort: vi.fn(async () => undefined),
+    };
+    const runtime = new ExyAgentRuntime({
+      threads: { touch: vi.fn() },
+      drafts: {},
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      verifier: {},
+    } as never) as unknown as RuntimeProgressApi;
+    runtime.getOrCreateSession = vi.fn(async () => ({
+      session,
+      record,
+      preference: { provider: "openai-codex", modelId: "model", reasoning: "low" },
+    }));
+    runtime.synchronizeSessionPreference = vi.fn(async () => undefined);
+    runtime.recallMemory = vi.fn(async () => "");
+
+    const progress: AgentProgressEvent[] = [];
+    const result = await runtime.runTurnExclusive({
+      threadId: "thread-1",
+      content: "Draft a concise post",
+      signal: new AbortController().signal,
+      onProgress: async (event) => {
+        progress.push(event);
+      },
+    });
+
+    expect(progress).toEqual([
+      { type: "assistant_text", message: "Absolutely—I’ll keep it concise." },
+      { type: "tool_status", message: "Saving your X draft" },
+    ]);
+    expect(result.content).toBe(`I'd post this:\n\n${exactDraft}`);
+    expect(`${progress.map((event) => event.message).join("\n")}\n${result.content}`)
+      .not.toMatch(/approval|EXY_APPROVAL|draft id/iu);
   });
 });

@@ -275,7 +275,7 @@ describe("DiscordGateway lifecycle", () => {
     await gateway.stop();
   });
 
-  it("delivers sanitized statuses before the final response exactly once", async () => {
+  it("delivers intermediate assistant text and sanitized statuses before the final response", async () => {
     const client = new FakeClient();
     const delivered: string[] = [];
     const send = vi.fn(async (payload: { content: string }) => {
@@ -297,6 +297,7 @@ describe("DiscordGateway lifecycle", () => {
     };
     const gateway = new DiscordGateway(gatewayOptions(client, {
       runConversation: vi.fn(async (turn) => {
+        await turn.onProgress({ type: "assistant_text", message: "Absolutely—I’ll draft that." });
         await turn.onProgress({ type: "tool_status", message: "Looking at your X profile" });
         return "Complete final response.";
       }),
@@ -306,6 +307,7 @@ describe("DiscordGateway lifecycle", () => {
     await runConversationDirectly(gateway, thread, threadMessage(thread));
 
     expect(delivered).toEqual([
+      "Absolutely—I’ll draft that.",
       "*Looking at your X profile…*",
       "Complete final response.",
     ]);
@@ -335,8 +337,10 @@ describe("DiscordGateway lifecycle", () => {
     await gateway.start();
 
     const running = runConversationDirectly(gateway, thread, threadMessage(thread));
-    await new Promise((resolve) => setTimeout(resolve, 24));
-    expect(thread.sendTyping.mock.calls.length).toBeGreaterThanOrEqual(3);
+    await vi.waitFor(
+      () => expect(thread.sendTyping.mock.calls.length).toBeGreaterThanOrEqual(3),
+      { timeout: 250, interval: 5 },
+    );
     finish();
     await running;
     const stoppedAt = thread.sendTyping.mock.calls.length;

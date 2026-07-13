@@ -108,10 +108,10 @@ read-only Zernio account, analytics, and post-history tools remain available eit
 
 This is expected. Exy requires target-level Zernio confirmation with `status: published`.
 A request-level `2xx`, post-level status, pending job, or another platform's success is
-not enough. If the response includes a Zernio provider record, ask Exy to recheck that
-publication status; the focused tool requires the matching consumed approval and account
-scope. Otherwise inspect the returned sanitized provider message. Never manually mark the
-local approval successful.
+not enough. If Zernio returned a nonterminal provider record, ask Exy to recheck the
+publication status in the same Discord conversation. The provider record and draft ID
+remain internal; the user does not need to supply either one. Otherwise inspect the
+returned sanitized provider message.
 
 If `EXY_DRY_RUN=1` is set, no real publish request is made and confirmation is always
 false. Check the effective service environment:

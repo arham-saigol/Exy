@@ -167,4 +167,46 @@ export const MIGRATIONS: readonly Migration[] = [
       ) STRICT;
     `,
   },
+  // Versions 1 and 2 retain the retired approval tables because migrations are
+  // append-only and existing installations may already have applied them. No
+  // runtime code reads or writes those tables after this migration.
+  {
+    version: 3,
+    name: "conversation-publication-drafts",
+    sql: `
+      CREATE TABLE publication_drafts (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        discord_user_id TEXT NOT NULL,
+        x_account_id TEXT NOT NULL,
+        publication_kind TEXT NOT NULL CHECK (publication_kind IN ('reply', 'original')),
+        target_post_id TEXT CHECK (
+          target_post_id IS NULL OR
+          (length(target_post_id) > 0 AND target_post_id NOT GLOB '*[^0-9]*')
+        ),
+        payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+        payload_sha256 TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('current', 'superseded', 'consumed')),
+        created_at INTEGER NOT NULL,
+        consumed_at INTEGER,
+        CHECK (
+          (publication_kind = 'reply' AND target_post_id IS NOT NULL) OR
+          (publication_kind = 'original' AND target_post_id IS NULL)
+        )
+      ) STRICT;
+
+      CREATE UNIQUE INDEX publication_drafts_one_current_per_thread_idx
+        ON publication_drafts(thread_id) WHERE state = 'current';
+      CREATE INDEX publication_drafts_scope_time_idx
+        ON publication_drafts(discord_user_id, x_account_id, thread_id, created_at DESC);
+
+      CREATE TABLE publication_draft_provider_attempts (
+        draft_id TEXT PRIMARY KEY REFERENCES publication_drafts(id) ON DELETE CASCADE,
+        provider_record_id TEXT NOT NULL UNIQUE,
+        provider_status TEXT NOT NULL,
+        confirmed INTEGER NOT NULL CHECK (confirmed IN (0, 1)),
+        updated_at INTEGER NOT NULL
+      ) STRICT;
+    `,
+  },
 ];

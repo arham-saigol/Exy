@@ -1,15 +1,15 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { Scope } from "../core/types.js";
-import type { PublicationApprovalRepository } from "../db/approvals.js";
 import type { CandidateMappingRepository } from "../db/candidates.js";
+import type { PublicationDraftRepository } from "../db/drafts.js";
 import type { JsonValue } from "../db/json.js";
 import type { ExaClient } from "../providers/exa.js";
+import type { PublishResult } from "../providers/contracts.js";
 import type { SupermemoryClient } from "../providers/supermemory.js";
 import type { XquikClient } from "../providers/xquik.js";
 import type { ZernioClient } from "../providers/zernio.js";
 import { canonicalizeXPost } from "../verifier/canonicalize.js";
-import { formatApprovalCode } from "./approval-code.js";
 import { memoryContainerTag } from "./scope.js";
 
 export interface ExyToolDependencies {
@@ -27,8 +27,7 @@ export interface ExyToolDependencies {
     suggestedReply?: string;
     candidate?: JsonValue;
   }): StageReplyOpportunityResult;
-  approvals: PublicationApprovalRepository;
-  xAccountLabel: string;
+  drafts: PublicationDraftRepository;
   dryRunPublishing?: boolean;
   extraTools?: readonly ToolDefinition[];
 }
@@ -86,6 +85,15 @@ function publicationPayload(value: JsonValue): PublicationPayload {
     content: candidate.content,
     accountId: candidate.accountId,
     ...(typeof candidate.targetPostId === "string" ? { targetPostId: candidate.targetPostId } : {}),
+  };
+}
+
+function publicPublicationResult(result: PublishResult): Omit<PublishResult, "providerRecordId" | "providerPostId"> {
+  return {
+    confirmed: result.confirmed,
+    providerStatus: result.providerStatus,
+    message: result.message,
+    ...(result.providerPostUrl ? { providerPostUrl: result.providerPostUrl } : {}),
   };
 }
 
@@ -197,12 +205,67 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
       ),
   });
 
-  const renderOriginalDraft = defineTool({
-    name: "render_original_post_draft",
-    label: "Render original-post draft",
-    description: "Required presentation boundary for every original-post draft. It preserves exact draft text after X research and keeps original drafts outside the reply-opportunity verifier. This never publishes or creates an approval.",
-    parameters: Type.Object({ content: Type.String({ minLength: 1, maxLength: 25_000 }) }),
-    execute: async (_id, input) => text({ kind: "original_draft", exactContent: input.content, published: false }),
+  const saveDraft = defineTool({
+    name: "save_x_draft",
+    label: "Save current X draft",
+    description:
+      "Store the exact original post or reply draft that you are about to show the user. This updates the current draft for this Discord conversation and never publishes. For a reply, provide exactly one searched candidateRef or direct X post ID/URL. Do not expose internal draft IDs.",
+    parameters: Type.Object({
+      kind: Type.Union([Type.Literal("reply"), Type.Literal("original")]),
+      content: Type.String({ minLength: 1, maxLength: 25_000 }),
+      candidateRef: Type.Optional(Type.String({ description: "For a searched reply target; mutually exclusive with post" })),
+      post: Type.Optional(Type.String({ minLength: 1, maxLength: 500, description: "Direct reply target post ID or X status URL; mutually exclusive with candidateRef" })),
+    }),
+    execute: async (_id, input) => {
+      if (input.kind === "reply" && ((input.candidateRef === undefined) === (input.post === undefined))) {
+        throw new Error("Reply drafts require exactly one candidateRef or direct post ID/URL");
+      }
+      if (input.kind === "original" && (input.candidateRef !== undefined || input.post !== undefined)) {
+        throw new Error("Original-post drafts must not include a reply target");
+      }
+      const candidate = input.kind === "reply" && input.candidateRef !== undefined
+        ? requireCandidate(deps, input.candidateRef)
+        : undefined;
+      const target = input.kind === "reply"
+        ? candidate ?? canonicalizeXPost(input.post!)
+        : undefined;
+      if (target) {
+        const stage = deps.stageReplyOpportunity({
+          post: target.postId,
+          rationale: "Selected as the target for this reply draft.",
+          suggestedReply: input.content,
+          ...(candidate?.candidate === undefined ? {} : { candidate: candidate.candidate }),
+        });
+        if (stage.status === "pending_delivery") {
+          return text({
+            stored: false,
+            verifierPending: true,
+            instruction: "This reply target is pending delivery in another Exy conversation. Retry after that delivery settles.",
+          });
+        }
+      }
+      const payload: PublicationPayload = {
+        kind: input.kind,
+        content: input.content,
+        accountId: deps.scope.xAccountId,
+        ...(target ? { targetPostId: target.postId } : {}),
+      };
+      deps.drafts.save({
+        ...deps.scope,
+        threadId: deps.threadId,
+        kind: input.kind,
+        payload: asJson(payload),
+        ...(target ? { targetPostId: target.postId } : {}),
+      });
+      return text({
+        stored: true,
+        kind: input.kind,
+        exactContent: input.content,
+        ...(target ? { target: target.canonicalUrl } : {}),
+        published: false,
+        instruction: "Present this exact draft naturally. Do not mention internal identifiers.",
+      });
+    },
   });
 
   const fetchWeb = defineTool({
@@ -245,98 +308,39 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
       ),
   });
 
-  const preparePublication = defineTool({
-    name: "prepare_x_publication",
-    label: "Prepare X publication approval",
+  const publishCurrentDraft = defineTool({
+    name: "publish_current_x_draft",
+    label: "Publish current X draft",
     description:
-      "Validate and prepare an immutable reply or original post for explicit user approval. This never publishes. Show the exact content/target and instruct the user to send `approve <approvalCode>` in a later message.",
-    parameters: Type.Object({
-      kind: Type.Union([Type.Literal("reply"), Type.Literal("original")]),
-      content: Type.String({ minLength: 1, maxLength: 25_000 }),
-      candidateRef: Type.Optional(Type.String({ description: "For a searched reply target; mutually exclusive with post" })),
-      post: Type.Optional(Type.String({ minLength: 1, maxLength: 500, description: "Direct reply target post ID or X status URL; mutually exclusive with candidateRef" })),
-    }),
-    execute: async (_id, input, signal) => {
-      if (input.kind === "reply" && ((input.candidateRef === undefined) === (input.post === undefined))) {
-        throw new Error("Reply preparation requires exactly one candidateRef or direct post ID/URL");
+      "Publish the exact current draft for this Discord conversation. Call only when the user's latest message explicitly and unambiguously instructs you to publish that draft. This tool takes no content and no ID, so the saved draft cannot be regenerated or altered at publish time. If the user's reference or intent is ambiguous, ask a concise clarification question instead of calling this tool.",
+    parameters: Type.Object({}),
+    executionMode: "sequential",
+    execute: async (_id, _input, signal) => {
+      const current = deps.drafts.getCurrent(deps.threadId, deps.scope);
+      if (current === undefined) throw new Error("There is no current draft to publish in this conversation");
+      const payload = publicationPayload(current.payload);
+      if (payload.accountId !== deps.scope.xAccountId || payload.kind !== current.kind) {
+        throw new Error("Publication draft scope or kind does not match the current account");
       }
-      if (input.kind === "original" && (input.candidateRef !== undefined || input.post !== undefined)) {
-        throw new Error("Original-post preparation must not include a reply target");
-      }
-      const candidate = input.kind === "reply" && input.candidateRef !== undefined
-        ? requireCandidate(deps, input.candidateRef)
-        : undefined;
-      const target = input.kind === "reply"
-        ? candidate ?? canonicalizeXPost(input.post!)
-        : undefined;
       const validation = await deps.zernio.validatePost({
-        accountId: deps.scope.xAccountId,
-        content: input.content,
-        ...(target ? { replyToTweetId: target.postId } : {}),
+        accountId: payload.accountId,
+        content: payload.content,
+        ...(payload.targetPostId ? { replyToTweetId: payload.targetPostId } : {}),
       }, signal);
       if (!validation.valid) {
-        return text({ prepared: false, validation, instruction: "Fix validation errors; no approval was created." });
-      }
-      // A prepared reply displays its target in the approval card. Route that
-      // presentation through the verifier even if Pi skipped the explicit
-      // recommendation tool. Previously recommended targets remain usable.
-      if (target) {
-        const stage = deps.stageReplyOpportunity({
-          post: target.postId,
-          rationale: "Selected as the target for this prepared reply.",
-          suggestedReply: input.content,
-          ...(candidate?.candidate === undefined ? {} : { candidate: candidate.candidate }),
+        return text({
+          confirmed: false,
+          providerStatus: "validation_failed",
+          validation,
+          message: "The exact current draft did not pass X validation and was not published.",
         });
-        if (stage.status === "pending_delivery") {
-          return text({
-            prepared: false,
-            verifierPending: true,
-            instruction: "This reply target is pending delivery in another Exy conversation. Retry after that delivery settles; no approval was created.",
-          });
-        }
       }
-      const payload: PublicationPayload = {
-        kind: input.kind,
-        content: input.content,
-        accountId: deps.scope.xAccountId,
-        ...(target ? { targetPostId: target.postId } : {}),
-      };
-      const prepared = deps.approvals.prepare({
-        ...deps.scope,
-        kind: input.kind,
-        payload: asJson(payload),
-        ...(target ? { targetPostId: target.postId } : {}),
-      });
-      return text({
-        prepared: true,
-        approvalId: prepared.approval.id,
-        approvalCode: formatApprovalCode(prepared.approval.id, prepared.approvalToken),
-        exactContent: input.content,
-        account: deps.xAccountLabel,
-        ...(target ? { target: target.canonicalUrl } : { target: "new original X post" }),
-        expiresAt: new Date(prepared.approval.expiresAt).toISOString(),
-        instruction: "Do not publish yet. Ask the user to send: approve <approvalCode>",
-      });
-    },
-  });
-
-  const publishApproved = defineTool({
-    name: "publish_approved_x",
-    label: "Publish approved X content",
-    description:
-      "Publish one exact, explicitly approved preparation through Zernio. Takes only the approval ID; content cannot be changed here. Never call before the gateway reports that the user approval was accepted.",
-    parameters: Type.Object({ approvalId: Type.String({ format: "uuid" }) }),
-    execute: async (_id, input, signal) => {
-      const approval = deps.approvals.consume(input.approvalId, deps.scope);
-      const payload = publicationPayload(approval.payload);
-      if (payload.accountId !== deps.scope.xAccountId || payload.kind !== approval.kind) {
-        throw new Error("Approved publication scope or kind does not match the current account");
-      }
+      const draft = deps.drafts.consumeCurrent(deps.threadId, deps.scope);
       if (deps.dryRunPublishing) {
         return text({
           confirmed: false,
           providerStatus: "dry_run",
-          message: "Dry-run mode consumed the approval but intentionally made no provider publication request.",
+          message: "Dry-run mode consumed the current draft but intentionally made no provider publication request.",
         });
       }
       const result = payload.kind === "reply"
@@ -344,21 +348,21 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
             accountId: payload.accountId,
             content: payload.content,
             replyToTweetId: payload.targetPostId!,
-            requestId: approval.id,
+            requestId: draft.id,
           }, signal)
         : await deps.zernio.publishOriginal({
             accountId: payload.accountId,
             content: payload.content,
-            requestId: approval.id,
+            requestId: draft.id,
           }, signal);
       if (result.providerRecordId) {
-        deps.approvals.recordProviderAttempt(approval.id, deps.scope, {
+        deps.drafts.recordProviderAttempt(draft.id, deps.scope, {
           providerRecordId: result.providerRecordId,
           providerStatus: result.providerStatus,
           confirmed: result.confirmed,
         });
       }
-      return text(result);
+      return text(publicPublicationResult(result));
     },
   });
 
@@ -487,35 +491,31 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
   const inspectPublicationStatus = defineTool({
     name: "inspect_x_publication_status",
     label: "Inspect X publication status",
-    description: "Recheck the exact Zernio provider record already bound to a consumed publication approval in this user/X-account scope.",
-    parameters: Type.Object({
-      approvalId: Type.String({ format: "uuid" }),
-    }),
-    execute: async (_id, input, signal) => {
-      const approval = deps.approvals.getForScope(input.approvalId, deps.scope);
-      if (approval.state !== "consumed") throw new Error("Publication status can only be checked after an approved item was consumed");
-      const attempt = deps.approvals.getProviderAttempt(input.approvalId, deps.scope);
-      if (!attempt) throw new Error("This approval has no bound Zernio provider record to inspect");
+    description: "Recheck the latest Zernio publication attempt in this Discord conversation without exposing internal identifiers.",
+    parameters: Type.Object({}),
+    execute: async (_id, _input, signal) => {
+      const draft = deps.drafts.getLatestConsumed(deps.threadId, deps.scope);
+      const attempt = deps.drafts.getProviderAttempt(draft.id, deps.scope);
+      if (!attempt) throw new Error("The latest publication has no provider record to inspect");
       const result = await deps.zernio.getPublishResult(attempt.providerRecordId, deps.scope.xAccountId, signal);
-      deps.approvals.recordProviderAttempt(input.approvalId, deps.scope, {
+      deps.drafts.recordProviderAttempt(draft.id, deps.scope, {
         providerRecordId: attempt.providerRecordId,
         providerStatus: result.providerStatus,
         confirmed: result.confirmed,
       });
-      return text(result);
+      return text(publicPublicationResult(result));
     },
   });
 
   return [
     searchX,
     recommendReply,
-    renderOriginalDraft,
+    saveDraft,
     searchWeb,
     fetchWeb,
     searchMemory,
     storeMemory,
-    preparePublication,
-    publishApproved,
+    publishCurrentDraft,
     inspectPublicationStatus,
     account,
     analytics,

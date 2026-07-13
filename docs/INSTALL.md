@@ -134,7 +134,7 @@ An inactive but correctly installed service is a warning. Configuration, auth, p
 | `/opt/exy` | source checkout used for updates | root-managed, service read-only |
 | `/etc/exy/config.json` | Discord application/user IDs, selected X account, model, heartbeat settings | mode `0600` |
 | `/etc/exy/secrets.json` | Discord/provider API keys | mode `0600`; never logged |
-| `/var/lib/exy/exy.sqlite` | verifier, approvals, threads, schedules, histories | mode `0600`, WAL enabled |
+| `/var/lib/exy/exy.sqlite` | verifier, drafts, threads, schedules, histories | mode `0600`, WAL enabled |
 | `/var/lib/exy/pi-agent/auth.json` | Pi OAuth access/refresh credentials | Pi writes mode `0600` |
 | `/var/lib/exy/sessions/` | separate Pi JSONL session per Discord thread | mode `0700` directory |
 | `/var/lib/exy/workspace/HEARTBEAT.md` | live heartbeat checklist | mode `0600`, comments-only initially |

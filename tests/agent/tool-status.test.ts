@@ -10,6 +10,8 @@ describe("formatToolStatus", () => {
     expect(formatToolStatus("list_x_post_history", {})).toBe("Reviewing past posts");
     expect(formatToolStatus("search_x", {})).toBe("Searching X");
     expect(formatToolStatus("search_web", {})).toBe("Searching the web");
+    expect(formatToolStatus("save_x_draft", {})).toBe("Saving your X draft");
+    expect(formatToolStatus("publish_current_x_draft", {})).toBe("Publishing your X draft");
   });
 
   it("never exposes unknown names, arguments, IDs, URLs, or credentials", () => {

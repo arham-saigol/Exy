@@ -67,13 +67,14 @@ The integration follows Zernio's official account, post, validation, and analyti
 - [retrieve follower statistics](https://docs.zernio.com/accounts/get-follower-stats)
 
 A reply is a normal publish request whose X platform target includes
-`platformSpecificData.replyToTweetId`. Before an approval is created, Exy calls Zernio's
-content validation endpoint. After approval, it sends an idempotency request ID and
+`platformSpecificData.replyToTweetId`. After the user explicitly tells Exy to publish
+the current conversation draft, Exy calls Zernio's content validation endpoint,
+atomically consumes the exact stored draft, sends an internal idempotency request ID, and
 accepts publication as confirmed only when the response contains the configured X target
 with `status: "published"`. An accepted, queued, pending, partially failed, or malformed
 response is not reported as success. When Zernio returns a nonterminal record ID, Exy
-binds it to the consumed approval. Its focused status tool accepts that approval ID and
-can poll only the bound provider record without creating a second publication.
+binds it to the consumed draft. Its focused no-ID status tool polls the latest bound
+provider record in that Discord conversation without creating a second publication.
 
 Zernio's request limits depend on connected-account count and its platform publishing
 limits can change. Exy surfaces sanitized `429` errors and retry delays; consult the

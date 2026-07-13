@@ -38,7 +38,7 @@ failure and produces a nonzero status.
 
 ## Publishing dry run
 
-For a safe end-to-end approval exercise, add a systemd override:
+For a safe end-to-end publishing exercise, add a systemd override:
 
 ```bash
 sudo systemctl edit exy.service
@@ -58,8 +58,8 @@ sudo systemctl daemon-reload
 sudo exy restart
 ```
 
-In dry-run mode Exy still validates the post, creates an exact approval, requires the
-later approval message, and consumes that approval once. It does not call Zernio's
+In dry-run mode Exy still saves the exact draft, requires an explicit publish instruction,
+validates it, and consumes that draft once. It does not call Zernio's
 publish endpoint and explicitly reports that publication was not confirmed.
 
 Remove the override before real operation:
@@ -126,10 +126,10 @@ Exy is how newly supported model metadata becomes available. Always run `/model`
 
 ## Data retention
 
-SQLite retains Discord thread registrations, reply recommendations, prepared approvals,
-approval-bound provider publication attempts, model preferences, scheduled jobs, and
-execution history. Publication approvals expire and are one-time, but their audit rows
-remain. Removed jobs are soft-deleted. There is no
+SQLite retains Discord thread registrations, reply recommendations, conversation drafts,
+draft-bound provider publication attempts, model preferences, scheduled jobs, and
+execution history. Draft publication is one-time and its audit rows remain. Removed jobs
+are soft-deleted. There is no
 automatic destructive retention job in this release; size and backup retention remain an
 operator decision.
 

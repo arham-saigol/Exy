@@ -9,7 +9,7 @@ Exy is a self-hosted specialist agent for sustainable X/Twitter growth. It runs 
 - Discord mention-to-public-thread routing with one durable Pi conversation per thread.
 - Supermemory isolation by configured Discord user plus connected Zernio X account.
 - Xquik raw candidate search and a persistent, canonical-ID reply recommendation verifier.
-- Zernio content validation, exact one-time publication approvals, replies, original posts, and analytics.
+- Zernio content validation, exact one-time publication of conversation drafts, replies, original posts, and analytics.
 - Exa search and page fetching.
 - SQLite-backed schedules, execution leases/history, heartbeat execution, and open Agent Skills discovery.
 - An idempotent Ubuntu setup wizard and lifecycle CLI backed by systemd.
@@ -43,12 +43,12 @@ Before setup, create the provider accounts/API keys and connect the intended X a
 
 ## Publishing safety
 
-Publishing is deliberately two-step:
+Publishing requires one explicit user instruction after a draft exists:
 
-1. Exy validates and prepares an immutable original post or reply. It shows the exact content, target, expiry, and an `EXY_APPROVAL:…` code.
-2. The authorized user sends `approve EXY_APPROVAL:…` in a later message. Only then can the exact stored payload be consumed once and sent to Zernio.
+1. Exy saves the exact original post or reply it presents as the current draft for that Discord conversation. Drafting never publishes.
+2. The authorized user says `post this`, `publish this draft`, or gives an equivalent clear instruction. Exy validates and publishes that exact stored draft in the same turn, without another confirmation or a user-facing ID.
 
-General strategy instructions, schedules, heartbeats, and approval of another draft cannot authorize publication. Set `EXY_DRY_RUN=1` in a systemd override to exercise the complete approval path without calling Zernio's publish endpoint.
+Ambiguous references require clarification. General strategy instructions, schedules, heartbeats, and instructions about another draft cannot authorize publication. Set `EXY_DRY_RUN=1` in a systemd override to exercise the complete flow without calling Zernio's publish endpoint.
 
 ## CLI
 
