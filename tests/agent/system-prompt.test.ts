@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import { EXY_SYSTEM_PROMPT } from "../../src/agent/system-prompt.js";
 
-describe("Exy conversational publishing instructions", () => {
+describe("Exy coordinator and publishing instructions", () => {
+  it("delegates substantial research and every draft while retaining lightweight tools", () => {
+    expect(EXY_SYSTEM_PROMPT).toContain("spawn_research_subagent");
+    expect(EXY_SYSTEM_PROMPT).toContain("For every reply or original-post draft, call spawn_writing_subagent");
+    expect(EXY_SYSTEM_PROMPT).toContain("Never compose or rewrite draft text yourself");
+    expect(EXY_SYSTEM_PROMPT).toContain("existing X and web tools remain available");
+  });
+
   it("asks for an acknowledgement and naturally framed draft unless bare copy was requested", () => {
     expect(EXY_SYSTEM_PROMPT).toContain("first briefly acknowledge the request");
     expect(EXY_SYSTEM_PROMPT).toContain("I'd post this:");

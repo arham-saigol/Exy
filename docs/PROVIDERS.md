@@ -5,6 +5,12 @@ Exy talks to each provider through a small REST adapter. Provider keys are writt
 included in normal logs. Run `sudo exy setup` to add or replace them, then
 `sudo exy doctor` to perform safe connectivity checks.
 
+## OpenCode Go (writing model)
+
+Exy uses Pi's native `opencode-go` provider for the dedicated writing subagent. Subscribe to OpenCode Go, copy the API key, then run `sudo exy login` and choose **OpenCode Go**. Exy stores the key in Pi's private `auth.json`, not `secrets.json`; the provider-scoped write preserves any existing ChatGPT/Codex OAuth credential.
+
+Login retrieves `https://opencode.ai/zen/go/v1/models`, validates the key through native Pi inference, and persists the selected writing model. Kimi K3 is recommended when present, but selection is not hard-coded. Rerun login if doctor reports that the persisted model disappeared from the current Go/Pi catalogs.
+
 ## Supermemory
 
 1. Create a Supermemory account and API key using the

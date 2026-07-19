@@ -1,11 +1,12 @@
 # Exy
 
-Exy is a self-hosted specialist agent for sustainable X/Twitter growth. It runs as a Discord bot on an Ubuntu VPS, uses Pi for the agent runtime and ChatGPT Plus/Pro Codex authentication, and exposes narrow tools for X research, web research, memory, publishing, analytics, skills, heartbeat work, and scheduled work.
+Exy is a self-hosted specialist agent for sustainable X/Twitter growth. It runs as a Discord bot on an Ubuntu VPS and uses Pi for a coordinator plus focused research and writing subagents. It supports ChatGPT/Codex and OpenCode Go credentials while exposing narrow tools for X research, web research, memory, publishing, analytics, skills, heartbeat work, and scheduled work.
 
 ## What is implemented
 
-- Pi `0.80.6` device-code OAuth for a headless VPS; no custom OAuth flow.
-- Pi-sourced OpenAI Codex model selection and Pi-sourced reasoning levels, persisted across restarts.
+- Pi `0.80.10` native providers: headless ChatGPT/Codex device-code OAuth and OpenCode Go API-key auth; no custom provider or OAuth flow.
+- A lean main coordinator that delegates substantial research to same-model research subagents and every reply/original-post draft to a user-selected OpenCode Go writing subagent.
+- Live OpenCode Go model discovery, Kimi K3 as the recommended writing default when available, and persisted main/writing model preferences.
 - Discord mention-to-public-thread routing with one durable Pi conversation per thread.
 - Supermemory isolation by configured Discord user plus connected Zernio X account.
 - Xquik raw candidate search and a persistent, canonical-ID reply recommendation verifier.
@@ -33,7 +34,8 @@ sudo npm run build
 sudo npm install --global . --prefix /usr/local
 
 sudo exy setup
-sudo exy login
+sudo exy login  # choose ChatGPT/Codex for the coordinator, if needed
+sudo exy login  # choose OpenCode Go and the writing model
 sudo exy doctor
 sudo exy start
 ```
@@ -41,6 +43,12 @@ sudo exy start
 If the repository is already present at `/opt/exy`, omit the clone step. The bootstrap installs an official Node 22 binary only when the installed Node is too old, and verifies its published SHA-256 checksum. `exy setup` then detects and installs missing Ubuntu runtime utilities, creates the service user and data layout, and installs the systemd unit.
 
 Before setup, create the provider accounts/API keys and connect the intended X account in Zernio. See [installation](docs/INSTALL.md), [provider setup](docs/PROVIDERS.md), and [Discord setup](docs/DISCORD.md).
+
+## Agent roles
+
+The main agent coordinates the conversation, quick lookups, tools, and publication transaction. Research-heavy work runs in an ephemeral research subagent that inherits the coordinator's active model and reasoning and can search X and the web repeatedly. Every reply and original post runs through an ephemeral writing subagent using the persisted OpenCode Go model. The writing tool saves the exact returned bytes before the coordinator can show them, so the coordinator cannot bypass the writer by saving its own copy.
+
+Installed Agent Skills are available to both child roles through Exy's confined skill tools. The bundled writing and X-algorithm skills are installed non-destructively during setup.
 
 ## Publishing safety
 
@@ -89,11 +97,9 @@ npm audit --omit=dev
 
 The test suite uses injected `fetch` implementations and temporary SQLite databases. It never calls real publish endpoints. The reply verifier tests cover duplicate URLs, alternate X/Twitter URL forms, scope isolation, and database restarts.
 
-## Upstream Pi model-list limitation
+## Model discovery notes
 
-Exy does not contain model IDs. After OAuth it asks Pi's `ModelRegistry` for the OpenAI Codex models exposed by the installed Pi release and uses `getSupportedThinkingLevels()` for the selected model.
-
-Pi currently ships the Codex catalog with each Pi release; its `openai-codex` provider does not implement remote account-entitlement enumeration. Therefore the UI accurately calls these “models exposed by Pi,” not “models verified against this account.” OpenAI can still reject a listed model on first use. Probing every model would consume subscription usage and is not a supported discovery API. See [research notes](docs/RESEARCH.md#pi-runtime-oauth-models-and-reasoning).
+Exy does not hard-code selectable model IDs. Codex choices come from Pi's authenticated native catalog. OpenCode Go login fetches the provider's current `/models` response, validates the submitted key with a minimal request through Pi's native `opencode-go` provider, and intersects the live Go catalog with models supported by the installed Pi release. It displays provider models that the current Pi version cannot yet run instead of silently selecting them. See [research notes](docs/RESEARCH.md#pi-runtime-oauth-models-and-reasoning).
 
 ## License
 

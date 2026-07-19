@@ -82,7 +82,7 @@ sudo tar --numeric-owner -C / -czf /root/exy-backup.tgz etc/exy var/lib/exy
 sudo exy start
 ```
 
-The archive contains provider and OAuth credentials. Protect it like a password vault,
+The archive contains provider API keys and OAuth credentials. Protect it like a password vault,
 encrypt it off-host, and do not commit it.
 
 To restore on a replacement host, install the same or a newer compatible Exy release,

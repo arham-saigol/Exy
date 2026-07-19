@@ -12,9 +12,9 @@ Eliminate predictable AI writing patterns from prose.
 
 ## Core Rules
 
-1. **Cut filler phrases.** Remove throat-clearing openers, emphasis crutches, and all adverbs. See [references/phrases.md](references/phrases.md).
+1. **Cut filler phrases.** Remove throat-clearing openers, emphasis crutches, and all adverbs.
 
-2. **Break formulaic structures.** Avoid binary contrasts, negative listings, dramatic fragmentation, rhetorical setups, false agency. See [references/structures.md](references/structures.md).
+2. **Break formulaic structures.** Avoid binary contrasts, negative listings, dramatic fragmentation, rhetorical setups, false agency.
 
 3. **Use active voice.** Every sentence needs a human subject doing something. No passive constructions. No inanimate objects performing human actions ("the complaint becomes a fix").
 
@@ -58,10 +58,6 @@ Rate 1-10 on each dimension:
 | Density | Anything cuttable? |
 
 Below 35/50: revise.
-
-## Examples
-
-See [references/examples.md](references/examples.md) for before/after transformations.
 
 ## License
 

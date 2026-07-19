@@ -27,6 +27,7 @@ import type { PiModelService, SelectableModel } from "./model-service.js";
 import { memoryContainerTag } from "./scope.js";
 import { EXY_SYSTEM_PROMPT } from "./system-prompt.js";
 import { createExyTools, type StageReplyOpportunityResult } from "./tools.js";
+import { createSubagentTools } from "./subagents.js";
 import { formatActivatedSkillStatus, formatToolStatus } from "./tool-status.js";
 import {
   extractXPostIds,
@@ -126,7 +127,9 @@ export class ExyAgentRuntime {
   }
 
   async listModels(): Promise<readonly { id: string; name?: string; reasoningLevels: readonly string[] }[]> {
-    return this.options.modelService.listCodexModels().map((model) => ({
+    const config = await this.options.configStore.readConfig();
+    if (!config.model) return [];
+    return (await this.options.modelService.listProviderModels(config.model.provider)).map((model) => ({
       id: model.id,
       name: model.name,
       reasoningLevels: model.reasoningLevels,
@@ -143,7 +146,7 @@ export class ExyAgentRuntime {
     await this.mutateModel(async () => {
       const config = await this.options.configStore.readConfig();
       if (!config.model) throw new Error("No default model is configured; run exy login");
-      const selected = this.options.modelService.listCodexModels().find((model) => model.id === modelId);
+      const selected = (await this.options.modelService.listProviderModels(config.model.provider)).find((model) => model.id === modelId);
       if (!selected) throw new Error("That model was not returned by Pi");
       const reasoning = selected.reasoningLevels.includes(config.model.reasoning)
         ? config.model.reasoning
@@ -159,7 +162,7 @@ export class ExyAgentRuntime {
     await this.mutateModel(async () => {
       const config = await this.options.configStore.readConfig();
       if (!config.model) throw new Error("No default model is configured; run exy login");
-      const selected = this.options.modelService.resolvePreference({
+      const selected = await this.options.modelService.resolvePreference({
         ...config.model,
         reasoning: reasoning as ModelPreference["reasoning"],
       });
@@ -242,7 +245,10 @@ export class ExyAgentRuntime {
         && event.message.content.some((item) => item.type === "toolCall")
         && activeAssistantMessage >= 0
       ) {
-        const intermediate = assistantMessages[activeAssistantMessage]?.trim() ?? "";
+        const invokesWriter = event.message.content.some((item) =>
+          item.type === "toolCall" && item.name === "spawn_writing_subagent",
+        );
+        const intermediate = invokesWriter ? "" : (assistantMessages[activeAssistantMessage]?.trim() ?? "");
         if (intermediate !== "") {
           const searchGuarded = guardRawXSearchNarrative(
             intermediate,
@@ -282,6 +288,9 @@ export class ExyAgentRuntime {
           if (status !== undefined) emitProgress({ type: "tool_status", message: status });
         }
         if (event.toolName === "search_x" && !event.isError) rawXSearchPerformed = true;
+        if (event.toolName === "spawn_research_subagent" && !event.isError && data?.searchedX === true) {
+          rawXSearchPerformed = true;
+        }
         if (
           event.toolName === "recommend_reply_opportunity"
           && !event.isError
@@ -297,7 +306,11 @@ export class ExyAgentRuntime {
             for (const postId of extractXPostIds(JSON.stringify(data))) allowedPostIds.add(postId);
           }
         }
-        if (event.toolName === "save_x_draft" && !event.isError && data?.stored === true) {
+        if (
+          (event.toolName === "save_x_draft" || event.toolName === "spawn_writing_subagent")
+          && !event.isError
+          && data?.stored === true
+        ) {
           for (const postId of extractXPostIds(JSON.stringify(event.result))) allowedPostIds.add(postId);
           if (typeof data?.exactContent === "string") exactDraftContents.push(data.exactContent);
         }
@@ -336,10 +349,18 @@ export class ExyAgentRuntime {
     const visibleOutput = guardedModelOutput
       || publishSummary
       || recommendationSummaries.join("\n\n")
+      || exactDraftContents.at(-1)
       || "I completed the turn but Pi returned no user-visible text.";
+    const latestExactDraft = exactDraftContents.at(-1);
+    // Render delegated drafts deterministically. The coordinator can neither
+    // substitute different copy nor place an alternative beside the writer's
+    // exact saved bytes.
+    const draftEnsuredOutput = latestExactDraft
+      ? formatDelegatedDraft(input.content, latestExactDraft, recommendationSummaries)
+      : visibleOutput;
     const preserveExactFencedContent = exactDraftContents.length > 0;
     const preserveGatewayFencedContent = preserveExactFencedContent || recommendationSummaries.length > 0;
-    const visiblePostIds = extractXPostIds(visibleOutput);
+    const visiblePostIds = extractXPostIds(draftEnsuredOutput);
     const deliveredRecommendations: StagedRecommendation[] = [];
     for (const staged of recommendationTurn.staged.values()) {
       if (visiblePostIds.has(staged.postId)) {
@@ -350,7 +371,7 @@ export class ExyAgentRuntime {
       }
     }
     const claimGuardedOutput = guardUnconfirmedPublicationClaims(
-      visibleOutput,
+      draftEnsuredOutput,
       publicationConfirmed,
       { preserveFencedContent: preserveGatewayFencedContent, preserveExactContent: exactDraftContents },
     );
@@ -525,7 +546,7 @@ export class ExyAgentRuntime {
     if (!record || record.archived) throw new Error("This Discord thread is not an active Exy conversation");
     const config = await this.options.configStore.readConfig();
     if (!config.model) throw new Error("No Pi model is configured; run exy login");
-    const selected = this.options.modelService.resolvePreference(config.model);
+    const selected = await this.options.modelService.resolvePreference(config.model);
 
     const manager = record.piSessionId
       ? SessionManager.open(record.piSessionId, this.options.paths.sessionsDir, this.options.paths.workspaceDir)
@@ -545,7 +566,7 @@ export class ExyAgentRuntime {
         ? { onHeartbeatChanged: async () => this.options.onHeartbeatChanged?.() }
         : {}),
     });
-    const customTools = createExyTools({
+    const exyTools = createExyTools({
       scope,
       threadId,
       sessionId: record.sessionId,
@@ -559,6 +580,30 @@ export class ExyAgentRuntime {
       dryRunPublishing: this.options.dryRunPublishing ?? false,
       extraTools: automationTools,
     });
+    const researchToolNames = new Set(["search_x", "search_web", "fetch_web_page"]);
+    const skillToolNames = new Set(["list_agent_skills", "activate_agent_skill", "read_agent_skill_resource"]);
+    const saveDraftTool = exyTools.find((tool) => tool.name === "save_x_draft");
+    if (!saveDraftTool) throw new Error("Exy's internal draft storage tool is unavailable");
+    const subagentTools = createSubagentTools({
+      paths: this.options.paths,
+      configStore: this.options.configStore,
+      modelService: this.options.modelService,
+      researchTools: exyTools.filter((tool) => researchToolNames.has(tool.name)),
+      skillTools: automationTools.filter((tool) => skillToolNames.has(tool.name)),
+      saveDraft: (input, signal) => saveDraftTool.execute(
+        "writing-subagent-draft",
+        input,
+        signal,
+        undefined,
+        undefined as never,
+      ),
+    });
+    // Draft persistence is reachable only through the writing subagent tool, so
+    // the coordinator cannot author copy and save it as if a writer produced it.
+    const customTools = [
+      ...exyTools.filter((tool) => tool.name !== "save_x_draft"),
+      ...subagentTools,
+    ];
     const loader = new DefaultResourceLoader({
       cwd: this.options.paths.workspaceDir,
       agentDir: this.options.paths.piAgentDir,
@@ -568,8 +613,7 @@ export class ExyAgentRuntime {
     const { session } = await createAgentSession({
       cwd: this.options.paths.workspaceDir,
       agentDir: this.options.paths.piAgentDir,
-      authStorage: this.options.modelService.authStorage,
-      modelRegistry: this.options.modelService.registry,
+      modelRuntime: await this.options.modelService.modelRuntime,
       model: selected.model,
       thinkingLevel: config.model.reasoning,
       noTools: "builtin",
@@ -598,7 +642,7 @@ export class ExyAgentRuntime {
       live.preference.modelId === config.model.modelId &&
       live.preference.reasoning === config.model.reasoning
     ) return;
-    const selected = this.options.modelService.resolvePreference(config.model);
+    const selected = await this.options.modelService.resolvePreference(config.model);
     await live.session.setModel(selected.model);
     live.session.setThinkingLevel(config.model.reasoning);
     live.preference = config.model;
@@ -746,6 +790,16 @@ export function formatPublicationOutcome(data: Record<string, unknown> | undefin
   const message = safeOutcomeField(data.message, "Zernio confirmed the configured X target as published.");
   const url = typeof data.providerPostUrl === "string" ? `\nPost: ${data.providerPostUrl}` : "";
   return `Zernio confirmed publication for the configured X account.\nProvider status: ${status}\n${message}${url}`;
+}
+
+function formatDelegatedDraft(
+  userMessage: string,
+  exactDraft: string,
+  recommendationSummaries: readonly string[],
+): string {
+  if (recommendationSummaries.length > 0) return recommendationSummaries.join("\n\n");
+  const bareCopyRequested = /\b(?:bare|only|just)\b[^\n]{0,40}\b(?:copy|text|post|reply)\b|\b(?:copy|text)\s+only\b/iu.test(userMessage);
+  return bareCopyRequested ? exactDraft : `I'd post this:\n\n${exactDraft}`;
 }
 
 function formatReplyRecommendation(staged: StagedRecommendation): string {

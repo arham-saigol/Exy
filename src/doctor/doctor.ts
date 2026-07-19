@@ -115,22 +115,44 @@ export async function runDoctor(paths: ExyPaths): Promise<boolean> {
 
   try {
     const pi = new PiModelService(paths.piAuthFile);
-    const authenticated = await pi.validateCodexAuthentication();
-    results.push({
-      name: "Pi OpenAI Codex authentication",
-      status: authenticated ? "pass" : "fail",
-      detail: authenticated ? "credential available and refreshable" : "run exy login",
-    });
-    if (authenticated && config?.model) {
-      results.push(await privateServiceFile(paths.piAuthFile, "Pi OAuth credential file", serviceUid));
-      const model = pi.resolvePreference(config.model);
+    if (config?.model) {
+      const authenticated = await pi.validateAuthentication(config.model.provider);
       results.push({
-        name: "Pi model/reasoning",
-        status: "pass",
-        detail: `${model.provider}/${model.id} (${config.model.reasoning})`,
+        name: `Pi ${config.model.provider} authentication`,
+        status: authenticated ? "pass" : "fail",
+        detail: authenticated ? "credential available" : "run exy login",
       });
-    } else if (!config?.model) {
-      results.push({ name: "Pi model/reasoning", status: "fail", detail: "run exy login to select defaults" });
+      if (authenticated) {
+        results.push(await privateServiceFile(paths.piAuthFile, "Pi credential file", serviceUid));
+        const model = await pi.resolvePreference(config.model);
+        results.push({
+          name: "Pi main model/reasoning",
+          status: "pass",
+          detail: `${model.provider}/${model.id} (${config.model.reasoning})`,
+        });
+      }
+    } else {
+      results.push({ name: "Pi main model/reasoning", status: "fail", detail: "run exy login to select defaults" });
+    }
+
+    if (!config?.writingModel) {
+      results.push({
+        name: "Writing subagent",
+        status: "warn",
+        detail: "drafting is unavailable until you run exy login, choose OpenCode Go, and select a writing model",
+      });
+    } else {
+      const authenticated = await pi.validateAuthentication("opencode-go");
+      if (!authenticated) {
+        results.push({ name: "Writing subagent", status: "fail", detail: "OpenCode Go key unavailable; run exy login" });
+      } else {
+        const writing = await pi.resolveWritingPreference(config.writingModel);
+        results.push({
+          name: "Writing subagent",
+          status: "pass",
+          detail: `${writing.provider}/${writing.id} (${config.writingModel.reasoning})`,
+        });
+      }
     }
   } catch (error) {
     results.push({ name: "Pi", status: "fail", detail: error instanceof Error ? error.message : String(error) });

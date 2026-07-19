@@ -1,6 +1,11 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
-import { toSelectableModel, validatePreference } from "../../src/agent/model-service.js";
+import {
+  assertSuccessfulOpenCodeValidation,
+  toSelectableModel,
+  validatePreference,
+} from "../../src/agent/model-service.js";
 
 function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
   return {
@@ -19,6 +24,23 @@ function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
 }
 
 describe("Pi model and reasoning selection", () => {
+  it("uses a Pi release whose native OpenCode Go catalog includes Kimi K3", () => {
+    expect(getBuiltinModel("opencode-go", "kimi-k3")).toMatchObject({
+      provider: "opencode-go",
+      id: "kimi-k3",
+      name: "Kimi K3",
+    });
+  });
+
+  it("rejects provider error/abort results during OpenCode key validation", () => {
+    expect(() => assertSuccessfulOpenCodeValidation({
+      stopReason: "error",
+      errorMessage: "401: Invalid API key",
+    })).toThrow("401: Invalid API key");
+    expect(() => assertSuccessfulOpenCodeValidation({ stopReason: "aborted" })).toThrow(/aborted/u);
+    expect(() => assertSuccessfulOpenCodeValidation({ stopReason: "stop" })).not.toThrow();
+  });
+
   it("derives reasoning choices from Pi metadata, including holes", () => {
     const selectable = toSelectableModel(
       model({ thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null } }),

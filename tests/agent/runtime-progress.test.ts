@@ -168,7 +168,7 @@ describe("ExyAgentRuntime progress", () => {
     );
   });
 
-  it("keeps acknowledgement and framed draft text from separate assistant messages", async () => {
+  it("suppresses pre-writer prose and renders the delegated draft deterministically", async () => {
     let listener: ((event: any) => void) | undefined;
     const exactDraft = "Build trust before you chase reach.";
     const session = {
@@ -190,18 +190,18 @@ describe("ExyAgentRuntime progress", () => {
             role: "assistant",
             content: [
               { type: "text", text: "Absolutely—I’ll keep it concise." },
-              { type: "toolCall", name: "save_x_draft", arguments: { kind: "original", content: exactDraft } },
+              { type: "toolCall", name: "spawn_writing_subagent", arguments: { kind: "original", userRequest: "Draft a concise post" } },
             ],
           },
         });
         listener?.({
           type: "tool_execution_start",
-          toolName: "save_x_draft",
-          args: { kind: "original", content: exactDraft },
+          toolName: "spawn_writing_subagent",
+          args: { kind: "original", userRequest: "Draft a concise post" },
         });
         listener?.({
           type: "tool_execution_end",
-          toolName: "save_x_draft",
+          toolName: "spawn_writing_subagent",
           isError: false,
           result: {
             content: [{ type: "text", text: JSON.stringify({ stored: true, exactContent: exactDraft }) }],
@@ -240,8 +240,7 @@ describe("ExyAgentRuntime progress", () => {
     });
 
     expect(progress).toEqual([
-      { type: "assistant_text", message: "Absolutely—I’ll keep it concise." },
-      { type: "tool_status", message: "Saving your X draft" },
+      { type: "tool_status", message: "Drafting with your writing specialist" },
     ]);
     expect(result.content).toBe(`I'd post this:\n\n${exactDraft}`);
     expect(`${progress.map((event) => event.message).join("\n")}\n${result.content}`)

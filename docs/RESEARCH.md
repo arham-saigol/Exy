@@ -6,7 +6,7 @@ together define the supported snapshot.
 
 ## Pi runtime, OAuth, models, and reasoning
 
-Exy pins these current Pi packages at `0.80.6`:
+Exy pins these current Pi packages at `0.80.10`:
 
 - `@earendil-works/pi-coding-agent`
 - `@earendil-works/pi-ai`
@@ -16,26 +16,30 @@ Their package metadata requires Node.js 22.19 or newer. Pi's
 custom tools, sessions, authentication storage, and model registry.
 
 The `openai-codex` OAuth provider implements both browser callback and device-code
-methods. Exy calls Pi's `AuthStorage.login("openai-codex", callbacks)` and selects Pi's
-device-code method for a headless VPS; it does not duplicate token exchange or refresh
-logic. Pi persists and refreshes the credentials. Relevant primary source:
+methods. Exy calls `ModelRuntime.login("openai-codex", "oauth", interaction)` and selects
+the provider's device-code option for a headless VPS; it does not duplicate token exchange
+or refresh logic. Pi persists and refreshes the credentials. Relevant primary source:
 
 - [OpenAI Codex OAuth implementation](https://github.com/earendil-works/pi/blob/main/packages/ai/src/utils/oauth/openai-codex.ts)
 - [Pi OAuth callback and credential contract](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/custom-provider.md#oauth-support)
 
-After login Exy instantiates Pi's `ModelRegistry`, asks it for available authenticated
-models, filters only the `openai-codex` provider, and asks
-`getSupportedThinkingLevels(model)` for reasoning metadata. No model ID or model-specific
-reasoning list exists in Exy source. See Pi's
-[model registry source](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/model-registry.ts)
-and [model metadata source](https://github.com/earendil-works/pi/blob/main/packages/ai/src/models.ts).
+Pi `0.80.10` replaces the prior `AuthStorage`/`ModelRegistry` SDK wiring with the async
+`ModelRuntime` API. Exy was migrated to that API for provider-scoped login, credential
+refresh, model availability, and child sessions. The upgrade was required because
+`0.80.6` did not contain the native OpenCode Go Kimi K3 catalog entry.
 
-An important upstream limitation is explicit in the implementation: Pi's Codex provider
-does not remotely enumerate a subscription's account entitlements. `ModelRegistry`
-filters Pi's release-bundled catalog by available authentication. Exy therefore says
-"models exposed by Pi," validates the persisted ID/reasoning pair against that registry,
-and lets OpenAI reject an unavailable entitlement on use. It never invents example model
-names or probes every model.
+Codex model choices come from Pi's authenticated native catalog. OpenCode Go publishes a
+current public model endpoint at `https://opencode.ai/zen/go/v1/models`; Exy retrieves it
+during login, intersects the result with Pi's pinned native `opencode-go` catalog, then
+validates the submitted key with a minimal request through one model in that intersection. This avoids hard-coded selectors while
+ensuring every selected model has Pi's required protocol and reasoning metadata. The
+[OpenCode Go documentation](https://opencode.ai/docs/go/) identifies Kimi K3 as
+`opencode-go/kimi-k3` and documents the model endpoint.
+
+Exy's specialized child sessions use Pi's in-process `createAgentSession()` and
+`SessionManager.inMemory()` primitives. Research children receive the current main model
+and reasoning; writing children receive the persisted OpenCode Go preference. No token,
+iteration, runtime, or tool-call cap is added around those sessions.
 
 ## Provider APIs and package names
 

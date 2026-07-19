@@ -5,7 +5,7 @@
 - Ubuntu 22.04 LTS or 24.04 LTS
 - `amd64` or `arm64`
 - systemd as PID 1
-- outbound HTTPS access to Discord, OpenAI, Supermemory, Xquik, Zernio, Exa, npm, and GitHub when installing skills
+- outbound HTTPS access to Discord, OpenAI, OpenCode Go, Supermemory, Xquik, Zernio, Exa, npm, and GitHub when installing skills
 - Node.js 22.19.0 or newer; the current pinned Pi packages declare this minimum
 
 The application is intended for one VPS and one gateway process. SQLite is a good fit for this topology. Running multiple gateway replicas against the same database is not a supported high-availability design, although scheduler leases and verifier uniqueness still protect their individual invariants.
@@ -88,20 +88,23 @@ from a newly created in-scope Exy thread after restarting.
 
 The setup wizard itself is a Node program, so a usable Node runtime must exist before `exy setup` can execute; that is the sole purpose of the bootstrap step.
 
-## 4. Authenticate ChatGPT through Pi
+## 4. Configure Pi providers
+
+Run login once for each provider you need:
 
 ```bash
 sudo exy login
 ```
 
-Exy calls Pi's supported OpenAI Codex OAuth provider and forces Pi's documented `device_code` choice for headless use. It displays the OpenAI verification URL and short code, then lets Pi poll and persist the OAuth credentials. Exy does not proxy, reproduce, or maintain the OAuth protocol.
+The first prompt chooses **OpenCode Go** or **ChatGPT/Codex**.
 
-After authorization, Exy:
+For ChatGPT/Codex, Exy keeps the existing headless flow: Pi's native OAuth provider selects device-code login, displays the OpenAI verification URL/code, polls, refreshes, and stores the credential. You then select the main coordinator model and its Pi-supported reasoning level.
 
-- asks Pi's registry for authenticated OpenAI Codex models;
-- asks Pi for the reasoning levels supported by the selected model;
-- persists the exact provider/model/reasoning choice;
-- checks configured providers without printing credentials.
+For OpenCode Go, Exy asks for the API key with masked input, fetches the current public model catalog from OpenCode Go, validates the key with a minimal request through Pi's native `opencode-go` provider, displays every returned model, and asks which supported model should run the writing subagent. Kimi K3 is marked as recommended and becomes the default selection when the provider exposes it, but any currently selectable Pi/OpenCode Go model may be chosen. The writing preference persists independently from the main model.
+
+New installations can configure only OpenCode Go; if no main model exists, Exy also uses the selected Go model for the coordinator/research role. Existing Codex installations keep their OAuth credential and main model when OpenCode Go is added. They can still start after upgrading, but doctor warns and draft requests fail clearly until OpenCode Go is configured; no repeat Codex login is required. Pi performs provider-scoped credential updates, so neither path logs out the other. To change one provider later, rerun `exy login` and choose it again.
+
+Clear failures are reported for invalid keys, provider errors, empty model lists, and stale writing selections. A provider model newer than the installed Pi catalog is displayed as unavailable until Exy/Pi is upgraded rather than being silently substituted.
 
 The Exa check performs a one-result search because Exa has no documented free core-auth endpoint; it may consume a small amount of Exa usage.
 
@@ -119,7 +122,7 @@ sudo exy logs -f
 - Node and command dependencies
 - configuration and secret-file permissions
 - writable data/workspace/session/skill paths
-- refreshable Pi OAuth and the persisted model/reasoning pair
+- configured Pi credentials, the main model/reasoning pair, and the OpenCode Go writing model
 - Discord token and Message Content application flag
 - Discord authorized user identity
 - Supermemory, Xquik, Zernio, and Exa connectivity
@@ -135,7 +138,7 @@ An inactive but correctly installed service is a warning. Configuration, auth, p
 | `/etc/exy/config.json` | Discord application/user IDs, selected X account, model, heartbeat settings | mode `0600` |
 | `/etc/exy/secrets.json` | Discord/provider API keys | mode `0600`; never logged |
 | `/var/lib/exy/exy.sqlite` | verifier, drafts, threads, schedules, histories | mode `0600`, WAL enabled |
-| `/var/lib/exy/pi-agent/auth.json` | Pi OAuth access/refresh credentials | Pi writes mode `0600` |
+| `/var/lib/exy/pi-agent/auth.json` | Pi provider-scoped Codex OAuth and OpenCode Go credentials | Pi writes mode `0600` |
 | `/var/lib/exy/sessions/` | separate Pi JSONL session per Discord thread | mode `0700` directory |
 | `/var/lib/exy/workspace/HEARTBEAT.md` | live heartbeat checklist | mode `0600`, comments-only initially |
 | `/var/lib/exy/workspace/.agents/skills/` | live open Agent Skills | mode `0700` tree |

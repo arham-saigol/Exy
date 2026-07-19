@@ -10,14 +10,19 @@ an HTTP administration server.
    a continuation in a durably registered Exy thread, then resolves or creates the thread.
 2. The gateway serializes turns within that thread and loads its own Pi JSONL session.
 3. Exy recalls the matching Supermemory profile and semantic memories.
-4. Pi runs with the persisted model/reasoning preference and a lean X-growth system
-   prompt. Only focused Exy and automation tools are exposed; Pi's built-in shell and
-   file tools are disabled.
-5. Complete intermediate assistant messages and sanitized tool-start statuses flow
+4. Pi runs a lean coordinator with the persisted main model/reasoning preference. It keeps
+   focused X/web tools for quick work, but substantial research runs in an ephemeral child
+   session with the same model and reasoning. Every reply/original-post draft runs in an
+   ephemeral child session using the separately persisted OpenCode Go writing model.
+   Child sessions receive only role-specific provider and confined skill tools; Pi's built-in
+   shell and file tools remain disabled.
+5. The writing tool saves the child's exact output and reply target before returning it to
+   the coordinator. The coordinator has no direct content-bearing draft-save tool.
+6. Complete intermediate assistant messages and sanitized tool-start statuses flow
    through an ordered Discord stream while a typing keepalive remains active. Token
    deltas, reasoning, and tool internals are never sent; assistant text passes the same
    verifier and publication guards before delivery.
-6. The remaining guarded response is returned to the thread exactly once, then the completed
+7. The remaining guarded response is returned to the thread exactly once, then the completed
    exchange is submitted to the same Supermemory namespace only after final delivery
    succeeds.
 
@@ -76,9 +81,10 @@ byte-for-byte while surrounding conversational framing remains subject to the gu
 
 Publishing consumes an exact conversation draft:
 
-1. Pi calls `save_x_draft` before presenting an original post or reply. Exy canonicalizes
-   any reply target and replaces that thread's previous current draft. This never calls
-   a publishing endpoint.
+1. The coordinator calls `spawn_writing_subagent` with the full request, research, source
+   posts, audience, preferences, and reply target. The OpenCode Go child returns only draft
+   text; the outer tool canonicalizes the target and saves those exact bytes before returning.
+   This replaces that thread's previous current draft and never calls a publishing endpoint.
 2. The authorized user explicitly tells Exy to publish the current draft. If the intent
    or reference is ambiguous, Exy asks a concise clarification question.
 3. In that same turn Pi calls `publish_current_x_draft`, which accepts neither content
@@ -104,7 +110,8 @@ SQLite runs in WAL mode and owns:
 - scheduled jobs, leases, and run history.
 
 Configuration and provider secrets are atomic JSON files with mode `0600`. Pi owns a
-separate `auth.json` with its OAuth refresh credential. Thread session JSONL and the live
+separate `auth.json` containing provider-scoped Codex OAuth and/or OpenCode Go API-key
+credentials; adding one does not remove the other. Thread session JSONL and the live
 workspace are private to the system user. See [operations](OPERATIONS.md) for backup
 instructions.
 
@@ -114,7 +121,7 @@ instructions.
 - Zernio validates, publishes, lists the selected account, and retrieves analytics.
 - Exa searches the web and retrieves page contents.
 - Supermemory stores and recalls long-term context.
-- Pi performs model inference and OAuth credential management.
+- Pi performs model inference and native Codex/OpenCode Go credential management.
 
 The common provider transport never attaches headers or raw bodies to public errors. It
 retains only status, an allow-listed short code/message, and an optional retry delay,
