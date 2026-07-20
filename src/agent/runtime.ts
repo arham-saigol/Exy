@@ -352,11 +352,18 @@ export class ExyAgentRuntime {
       || exactDraftContents.at(-1)
       || "I completed the turn but Pi returned no user-visible text.";
     const latestExactDraft = exactDraftContents.at(-1);
+    const recommendationIncludesLatestDraft = latestExactDraft !== undefined
+      && [...recommendationTurn.staged.values()].some((staged) => staged.suggestedReply === latestExactDraft);
     // Render delegated drafts deterministically. The coordinator can neither
     // substitute different copy nor place an alternative beside the writer's
     // exact saved bytes.
     const draftEnsuredOutput = latestExactDraft
-      ? formatDelegatedDraft(input.content, latestExactDraft, recommendationSummaries)
+      ? formatDelegatedDraft(
+          input.content,
+          latestExactDraft,
+          recommendationSummaries,
+          recommendationIncludesLatestDraft,
+        )
       : visibleOutput;
     const preserveExactFencedContent = exactDraftContents.length > 0;
     const preserveGatewayFencedContent = preserveExactFencedContent || recommendationSummaries.length > 0;
@@ -796,9 +803,12 @@ function formatDelegatedDraft(
   userMessage: string,
   exactDraft: string,
   recommendationSummaries: readonly string[],
+  recommendationIncludesExactDraft: boolean,
 ): string {
   const bareCopyRequested = /\b(?:bare|only|just)\b[^\n]{0,40}\b(?:copy|text|post|reply)\b|\b(?:copy|text)\s+only\b/iu.test(userMessage);
-  const renderedDraft = bareCopyRequested ? exactDraft : `I'd post this:\n\n${exactDraft}`;
+  if (bareCopyRequested) return exactDraft;
+  if (recommendationIncludesExactDraft) return recommendationSummaries.join("\n\n");
+  const renderedDraft = `I'd post this:\n\n${exactDraft}`;
   return recommendationSummaries.length > 0
     ? `${recommendationSummaries.join("\n\n")}\n\n${renderedDraft}`
     : renderedDraft;

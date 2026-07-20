@@ -239,6 +239,85 @@ describe("ExyAgentRuntime progress", () => {
     }
   });
 
+  it.each([
+    { request: "Draft a reply", bareCopy: false },
+    { request: "Reply text only", bareCopy: true },
+  ])("does not duplicate an auto-staged reply draft for '$request'", async ({ request, bareCopy }) => {
+    const database = new ExyDatabase(":memory:");
+    try {
+      let listener: ((event: any) => void) | undefined;
+      let runtime!: ExyAgentRuntime;
+      const exactDraft = "Ship the useful version, then listen.";
+      const session = {
+        isStreaming: false,
+        reload: vi.fn(async () => undefined),
+        subscribe: vi.fn((next: (event: any) => void) => {
+          listener = next;
+          return () => undefined;
+        }),
+        prompt: vi.fn(async () => {
+          (runtime as unknown as {
+            stageReplyOpportunity(
+              threadId: string,
+              scope: { discordUserId: string; xAccountId: string },
+              sessionId: string,
+              input: { post: string; rationale: string; suggestedReply: string },
+            ): unknown;
+          }).stageReplyOpportunity(
+            record.threadId,
+            { discordUserId: record.discordUserId, xAccountId: record.xAccountId },
+            record.sessionId,
+            {
+              post: "1900123456789012346",
+              rationale: "Selected as the target for this reply draft.",
+              suggestedReply: exactDraft,
+            },
+          );
+          listener?.({
+            type: "tool_execution_end",
+            toolName: "spawn_writing_subagent",
+            isError: false,
+            result: {
+              content: [{ type: "text", text: JSON.stringify({ stored: true, exactContent: exactDraft }) }],
+            },
+          });
+        }),
+        abort: vi.fn(async () => undefined),
+      };
+      runtime = new ExyAgentRuntime({
+        threads: { touch: vi.fn() },
+        drafts: {},
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        verifier: new ReplyOpportunityVerifier(database),
+      } as never);
+      const api = runtime as unknown as RuntimeProgressApi;
+      api.getOrCreateSession = vi.fn(async () => ({
+        session,
+        record,
+        preference: { provider: "openai-codex", modelId: "model", reasoning: "low" },
+      }));
+      api.synchronizeSessionPreference = vi.fn(async () => undefined);
+      api.recallMemory = vi.fn(async () => "");
+
+      const result = await api.runTurnExclusive({
+        threadId: record.threadId,
+        content: request,
+        signal: new AbortController().signal,
+        onProgress: async () => undefined,
+      });
+
+      if (bareCopy) {
+        expect(result.content).toBe(exactDraft);
+      } else {
+        expect(result.content).toContain("Reply opportunity");
+        expect(result.content.split(exactDraft)).toHaveLength(2);
+        expect(result.content).not.toContain("I'd post this:");
+      }
+    } finally {
+      database.close();
+    }
+  });
+
   it("suppresses pre-writer prose and renders the delegated draft deterministically", async () => {
     let listener: ((event: any) => void) | undefined;
     const exactDraft = "Build trust before you chase reach.";
