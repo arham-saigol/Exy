@@ -220,6 +220,86 @@ describe("ExyAgentRuntime progress", () => {
     expect(result.content).toBe(brief);
   });
 
+  it.each([
+    {
+      label: "success",
+      publishEvent: {
+        isError: false,
+        result: {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              confirmed: true,
+              providerStatus: "published",
+              message: "Published successfully.",
+              providerPostUrl: "https://x.com/exy/status/1900123456789012347",
+            }),
+          }],
+        },
+      },
+      expected: "Zernio confirmed publication for the configured X account.\nProvider status: published\nPublished successfully.\nPost: https://x.com/exy/status/1900123456789012347",
+    },
+    {
+      label: "failure",
+      publishEvent: {
+        isError: true,
+        result: {
+          content: [{ type: "text", text: "Provider rejected the publication." }],
+        },
+      },
+      expected: "Publication was not confirmed.\nProvider rejected the publication.",
+    },
+  ])("preserves the publication $label outcome when a draft is created in the same turn", async ({ publishEvent, expected }) => {
+    let listener: ((event: any) => void) | undefined;
+    const exactDraft = "Ship the smallest useful version, then listen.";
+    const session = {
+      isStreaming: false,
+      reload: vi.fn(async () => undefined),
+      subscribe: vi.fn((next: (event: any) => void) => {
+        listener = next;
+        return () => undefined;
+      }),
+      prompt: vi.fn(async () => {
+        listener?.({
+          type: "tool_execution_end",
+          toolName: "spawn_writing_subagent",
+          isError: false,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ stored: true, exactContent: exactDraft }) }],
+          },
+        });
+        listener?.({
+          type: "tool_execution_end",
+          toolName: "publish_current_x_draft",
+          ...publishEvent,
+        });
+      }),
+      abort: vi.fn(async () => undefined),
+    };
+    const runtime = new ExyAgentRuntime({
+      threads: { touch: vi.fn() },
+      drafts: {},
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      verifier: {},
+    } as never) as unknown as RuntimeProgressApi;
+    runtime.getOrCreateSession = vi.fn(async () => ({
+      session,
+      record,
+      preference: { provider: "openai-codex", modelId: "model", reasoning: "low" },
+    }));
+    runtime.synchronizeSessionPreference = vi.fn(async () => undefined);
+    runtime.recallMemory = vi.fn(async () => "");
+
+    const result = await runtime.runTurnExclusive({
+      threadId: record.threadId,
+      content: "Draft this and post it",
+      signal: new AbortController().signal,
+      onProgress: async () => undefined,
+    });
+
+    expect(result.content).toBe(expected);
+  });
+
   it("renders a saved delegated draft alongside an already-staged recommendation", async () => {
     const database = new ExyDatabase(":memory:");
     try {

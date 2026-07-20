@@ -353,17 +353,16 @@ export class ExyAgentRuntime {
     const latestExactDraft = exactDraftContents.at(-1);
     const recommendationIncludesLatestDraft = latestExactDraft !== undefined
       && [...recommendationTurn.staged.values()].some((staged) => staged.suggestedReply === latestExactDraft);
-    // Render delegated drafts deterministically. The coordinator can neither
-    // substitute different copy nor place an alternative beside the writer's
-    // exact saved bytes.
-    const draftEnsuredOutput = latestExactDraft
+    // Publication outcomes take precedence; otherwise render delegated drafts
+    // deterministically so the coordinator cannot substitute different copy.
+    const draftEnsuredOutput = publishSummary ?? (latestExactDraft
       ? formatDelegatedDraft(
           input.content,
           latestExactDraft,
           recommendationSummaries,
           recommendationIncludesLatestDraft,
         )
-      : visibleOutput;
+      : visibleOutput);
     const preserveExactFencedContent = exactDraftContents.length > 0;
     const preserveGatewayFencedContent = preserveExactFencedContent || recommendationSummaries.length > 0;
     const visiblePostIds = extractXPostIds(draftEnsuredOutput);
