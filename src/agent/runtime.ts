@@ -216,7 +216,7 @@ export class ExyAgentRuntime {
     const recommendationTurn = this.beginRecommendationTurn(input.threadId);
     const allowedPostIds = new Set<string>();
     const exactDraftContents: string[] = [];
-    let rawXSearchPerformed = false;
+    let rawXCandidatesExposed = false;
     let alreadyRecommendedCount = 0;
     let publishSummary: string | undefined;
     let publicationConfirmed = false;
@@ -252,7 +252,7 @@ export class ExyAgentRuntime {
         if (intermediate !== "") {
           const searchGuarded = guardRawXSearchNarrative(
             intermediate,
-            rawXSearchPerformed,
+            rawXCandidatesExposed,
             alreadyRecommendedCount,
           );
           const preserveExactFencedContent = exactDraftContents.length > 0;
@@ -287,10 +287,9 @@ export class ExyAgentRuntime {
           const status = formatActivatedSkillStatus(data?.name);
           if (status !== undefined) emitProgress({ type: "tool_status", message: status });
         }
-        if (event.toolName === "search_x" && !event.isError) rawXSearchPerformed = true;
-        if (event.toolName === "spawn_research_subagent" && !event.isError && data?.searchedX === true) {
-          rawXSearchPerformed = true;
-        }
+        // Direct search results expose raw candidates to the coordinator. A research
+        // subagent's result is a synthesized brief, even when that child searched X.
+        if (event.toolName === "search_x" && !event.isError) rawXCandidatesExposed = true;
         if (
           event.toolName === "recommend_reply_opportunity"
           && !event.isError
@@ -343,7 +342,7 @@ export class ExyAgentRuntime {
       .join("\n\n");
     const guardedModelOutput = guardRawXSearchNarrative(
       output,
-      rawXSearchPerformed && recommendationSummaries.length === 0 && exactDraftContents.length === 0,
+      rawXCandidatesExposed && recommendationSummaries.length === 0 && exactDraftContents.length === 0,
       alreadyRecommendedCount,
     );
     const visibleOutput = guardedModelOutput

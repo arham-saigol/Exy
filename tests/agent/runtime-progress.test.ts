@@ -170,6 +170,56 @@ describe("ExyAgentRuntime progress", () => {
     );
   });
 
+  it("preserves a research brief when only the research subagent searched X", async () => {
+    let listener: ((event: any) => void) | undefined;
+    const brief = "Recent discussion clusters around onboarding friction and pricing clarity.";
+    const session = {
+      isStreaming: false,
+      reload: vi.fn(async () => undefined),
+      subscribe: vi.fn((next: (event: any) => void) => {
+        listener = next;
+        return () => undefined;
+      }),
+      prompt: vi.fn(async () => {
+        listener?.({
+          type: "tool_execution_end",
+          toolName: "spawn_research_subagent",
+          isError: false,
+          result: {
+            content: [{ type: "text", text: JSON.stringify({ findings: brief, searchedX: true }) }],
+          },
+        });
+        listener?.({
+          type: "message_update",
+          assistantMessageEvent: { type: "text_delta", delta: brief },
+        });
+      }),
+      abort: vi.fn(async () => undefined),
+    };
+    const runtime = new ExyAgentRuntime({
+      threads: { touch: vi.fn() },
+      drafts: {},
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      verifier: {},
+    } as never) as unknown as RuntimeProgressApi;
+    runtime.getOrCreateSession = vi.fn(async () => ({
+      session,
+      record,
+      preference: { provider: "openai-codex", modelId: "model", reasoning: "low" },
+    }));
+    runtime.synchronizeSessionPreference = vi.fn(async () => undefined);
+    runtime.recallMemory = vi.fn(async () => "");
+
+    const result = await runtime.runTurnExclusive({
+      threadId: "thread-1",
+      content: "Analyze current trends",
+      signal: new AbortController().signal,
+      onProgress: async () => undefined,
+    });
+
+    expect(result.content).toBe(brief);
+  });
+
   it("renders a saved delegated draft alongside an already-staged recommendation", async () => {
     const database = new ExyDatabase(":memory:");
     try {
