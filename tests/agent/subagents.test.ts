@@ -1,5 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { createSubagentTools, terminalAssistantText } from "../../src/agent/subagents.js";
 import {
@@ -33,8 +33,10 @@ function marker(name: string): ToolDefinition {
   return { name } as ToolDefinition;
 }
 
+const executionContext = {} as ExtensionContext;
+
 async function execute(tool: ToolDefinition, input: Record<string, unknown>) {
-  return tool.execute("test", input, new AbortController().signal, undefined, undefined as never);
+  return tool.execute("test", input, new AbortController().signal, undefined, executionContext);
 }
 
 function resultJson(result: Awaited<ReturnType<ToolDefinition["execute"]>>) {
@@ -145,7 +147,7 @@ describe("specialized subagent tools", () => {
       kind: "reply",
       content: "Exact writer bytes — unchanged.",
       candidateRef: "opaque-1",
-    }, expect.any(AbortSignal));
+    }, expect.any(AbortSignal), executionContext);
   });
 
   it("fails clearly instead of falling back when the writing model is missing or stale", async () => {

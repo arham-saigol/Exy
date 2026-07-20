@@ -1,8 +1,9 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertSuccessfulOpenCodeValidation,
+  PiModelService,
   toSelectableModel,
   validatePreference,
 } from "../../src/agent/model-service.js";
@@ -30,6 +31,22 @@ describe("Pi model and reasoning selection", () => {
       id: "kimi-k3",
       name: "Kimi K3",
     });
+  });
+
+  it("uses Pi's bundled OpenCode Go catalog without a live catalog request", async () => {
+    const service = Object.create(PiModelService.prototype) as PiModelService;
+    const getAvailable = vi.fn(async () => [model({
+      provider: "opencode-go",
+      id: "kimi-k3",
+      name: "Kimi K3",
+    })]);
+    Object.defineProperty(service, "runtimePromise", { value: Promise.resolve({ getAvailable }) });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(service.listProviderModels("opencode-go"))
+      .resolves.toEqual([expect.objectContaining({ provider: "opencode-go", id: "kimi-k3" })]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   it("rejects provider error/abort results during OpenCode key validation", () => {

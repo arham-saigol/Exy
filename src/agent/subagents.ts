@@ -3,6 +3,7 @@ import {
   DefaultResourceLoader,
   defineTool,
   SessionManager,
+  type ExtensionContext,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -45,7 +46,7 @@ export interface SubagentToolDependencies {
     content: string;
     candidateRef?: string;
     post?: string;
-  }, signal?: AbortSignal): ReturnType<ToolDefinition["execute"]>;
+  }, signal: AbortSignal | undefined, context: ExtensionContext): ReturnType<ToolDefinition["execute"]>;
   runner?: SpecializedSubagentRunner;
 }
 
@@ -198,7 +199,7 @@ export function createSubagentTools(deps: SubagentToolDependencies): ToolDefinit
       post: Type.Optional(Type.String({ minLength: 1, maxLength: 500, description: "Direct reply target post ID/URL; mutually exclusive with candidateRef" })),
     }),
     executionMode: "sequential",
-    execute: async (_id, input, signal) => {
+    execute: async (_id, input, signal, _onUpdate, context) => {
       const config = await deps.configStore.readConfig();
       if (!config.writingModel) {
         throw new Error("No OpenCode Go writing model is configured; run exy login and choose OpenCode Go");
@@ -232,7 +233,7 @@ export function createSubagentTools(deps: SubagentToolDependencies): ToolDefinit
         content: result.output,
         ...(input.candidateRef === undefined ? {} : { candidateRef: input.candidateRef }),
         ...(input.post === undefined ? {} : { post: input.post }),
-      }, signal);
+      }, signal, context);
     },
   });
 

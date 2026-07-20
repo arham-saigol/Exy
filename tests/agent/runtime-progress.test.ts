@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ExyAgentRuntime } from "../../src/agent/runtime.js";
 import type { AgentProgressEvent } from "../../src/core/progress.js";
+import { ExyDatabase } from "../../src/db/database.js";
 import type { DiscordThreadRecord } from "../../src/db/threads.js";
+import { ReplyOpportunityVerifier } from "../../src/verifier/reply-verifier.js";
 
 const record: DiscordThreadRecord = {
   threadId: "thread-1",
@@ -166,6 +168,75 @@ describe("ExyAgentRuntime progress", () => {
       "[Publication success claim omitted: Zernio did not confirm publication.]\n"
       + "[X post omitted: it was not passed through Exy's reply-opportunity verifier]",
     );
+  });
+
+  it("renders a saved delegated draft alongside an already-staged recommendation", async () => {
+    const database = new ExyDatabase(":memory:");
+    try {
+      let listener: ((event: any) => void) | undefined;
+      let runtime!: ExyAgentRuntime;
+      const exactDraft = "Ship the smallest useful version, then listen.";
+      const session = {
+        isStreaming: false,
+        reload: vi.fn(async () => undefined),
+        subscribe: vi.fn((next: (event: any) => void) => {
+          listener = next;
+          return () => undefined;
+        }),
+        prompt: vi.fn(async () => {
+          (runtime as unknown as {
+            stageReplyOpportunity(
+              threadId: string,
+              scope: { discordUserId: string; xAccountId: string },
+              sessionId: string,
+              input: { post: string; rationale: string },
+            ): unknown;
+          }).stageReplyOpportunity(
+            record.threadId,
+            { discordUserId: record.discordUserId, xAccountId: record.xAccountId },
+            record.sessionId,
+            { post: "1900123456789012345", rationale: "The author asked a relevant launch question." },
+          );
+          listener?.({
+            type: "tool_execution_end",
+            toolName: "spawn_writing_subagent",
+            isError: false,
+            result: {
+              content: [{ type: "text", text: JSON.stringify({ stored: true, exactContent: exactDraft }) }],
+            },
+          });
+        }),
+        abort: vi.fn(async () => undefined),
+      };
+      runtime = new ExyAgentRuntime({
+        threads: { touch: vi.fn() },
+        drafts: {},
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        verifier: new ReplyOpportunityVerifier(database),
+      } as never);
+      const api = runtime as unknown as RuntimeProgressApi;
+      api.getOrCreateSession = vi.fn(async () => ({
+        session,
+        record,
+        preference: { provider: "openai-codex", modelId: "model", reasoning: "low" },
+      }));
+      api.synchronizeSessionPreference = vi.fn(async () => undefined);
+      api.recallMemory = vi.fn(async () => "");
+
+      const result = await api.runTurnExclusive({
+        threadId: record.threadId,
+        content: "Draft a reply",
+        signal: new AbortController().signal,
+        onProgress: async () => undefined,
+      });
+
+      expect(result.content).toContain("Reply opportunity");
+      expect(result.content).toContain("https://x.com/i/web/status/1900123456789012345");
+      expect(result.content).toContain(`I'd post this:\n\n${exactDraft}`);
+      expect(result.content.indexOf("Reply opportunity")).toBeLessThan(result.content.indexOf(exactDraft));
+    } finally {
+      database.close();
+    }
   });
 
   it("suppresses pre-writer prose and renders the delegated draft deterministically", async () => {

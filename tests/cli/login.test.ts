@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchOpenCodeGoModelIds } from "../../src/cli/login.js";
+import type { SelectableModel } from "../../src/agent/model-service.js";
+import { fetchOpenCodeGoModelIds, synchronizeOpenCodeMainPreference } from "../../src/cli/login.js";
+import type { ModelPreference } from "../../src/core/types.js";
 
 describe("OpenCode Go model discovery", () => {
   it("returns every unique model currently exposed by the account endpoint", async () => {
@@ -33,5 +35,46 @@ describe("OpenCode Go model discovery", () => {
       .rejects.toThrow("invalid model list");
     await expect(fetchOpenCodeGoModelIds(vi.fn(async () => new Response(JSON.stringify({ data: [] }), { status: 200 })) as typeof fetch))
       .rejects.toThrow("empty model catalog");
+  });
+});
+
+describe("OpenCode Go main-model synchronization", () => {
+  const selected: ModelPreference = {
+    provider: "opencode-go",
+    modelId: "replacement",
+    reasoning: "medium",
+  };
+  const supported = [{
+    provider: "opencode-go",
+    id: "replacement",
+    reasoningLevels: ["medium"],
+  }] as SelectableModel[];
+
+  it("replaces a stale OpenCode Go coordinator with the selected writer", async () => {
+    const updateModel = vi.fn();
+    const store = {
+      readConfig: vi.fn(async () => ({
+        model: { provider: "opencode-go", modelId: "removed", reasoning: "medium" },
+      })),
+      updateModel,
+    };
+
+    await expect(synchronizeOpenCodeMainPreference(store as never, selected, supported))
+      .resolves.toBe("replaced-stale");
+    expect(updateModel).toHaveBeenCalledWith(selected);
+  });
+
+  it("leaves an existing Codex coordinator unchanged", async () => {
+    const updateModel = vi.fn();
+    const store = {
+      readConfig: vi.fn(async () => ({
+        model: { provider: "openai-codex", modelId: "codex", reasoning: "high" },
+      })),
+      updateModel,
+    };
+
+    await expect(synchronizeOpenCodeMainPreference(store as never, selected, supported))
+      .resolves.toBe("unchanged");
+    expect(updateModel).not.toHaveBeenCalled();
   });
 });

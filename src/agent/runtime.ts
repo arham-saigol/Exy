@@ -590,12 +590,12 @@ export class ExyAgentRuntime {
       modelService: this.options.modelService,
       researchTools: exyTools.filter((tool) => researchToolNames.has(tool.name)),
       skillTools: automationTools.filter((tool) => skillToolNames.has(tool.name)),
-      saveDraft: (input, signal) => saveDraftTool.execute(
+      saveDraft: (input, signal, context) => saveDraftTool.execute(
         "writing-subagent-draft",
         input,
         signal,
         undefined,
-        undefined as never,
+        context,
       ),
     });
     // Draft persistence is reachable only through the writing subagent tool, so
@@ -797,9 +797,11 @@ function formatDelegatedDraft(
   exactDraft: string,
   recommendationSummaries: readonly string[],
 ): string {
-  if (recommendationSummaries.length > 0) return recommendationSummaries.join("\n\n");
   const bareCopyRequested = /\b(?:bare|only|just)\b[^\n]{0,40}\b(?:copy|text|post|reply)\b|\b(?:copy|text)\s+only\b/iu.test(userMessage);
-  return bareCopyRequested ? exactDraft : `I'd post this:\n\n${exactDraft}`;
+  const renderedDraft = bareCopyRequested ? exactDraft : `I'd post this:\n\n${exactDraft}`;
+  return recommendationSummaries.length > 0
+    ? `${recommendationSummaries.join("\n\n")}\n\n${renderedDraft}`
+    : renderedDraft;
 }
 
 function formatReplyRecommendation(staged: StagedRecommendation): string {

@@ -27,6 +27,21 @@ function preferredReasoning(model: SelectableModel): ThinkingLevel {
   return reasoning;
 }
 
+export async function synchronizeOpenCodeMainPreference(
+  store: Pick<ConfigStore, "readConfig" | "updateModel">,
+  selected: ModelPreference,
+  supported: readonly SelectableModel[],
+): Promise<"initialized" | "replaced-stale" | "unchanged"> {
+  const current = (await store.readConfig()).model;
+  const currentIsSelectable = current?.provider === "opencode-go"
+    && supported.some((model) =>
+      model.id === current.modelId && model.reasoningLevels.includes(current.reasoning),
+    );
+  if (current && (current.provider !== "opencode-go" || currentIsSelectable)) return "unchanged";
+  await store.updateModel(selected);
+  return current ? "replaced-stale" : "initialized";
+}
+
 async function loginCodex(pi: PiModelService, store: ConfigStore): Promise<ModelPreference> {
   console.log("Starting Pi's OpenAI Codex device-code login for ChatGPT Plus/Pro…\n");
   await pi.loginWithDeviceCode({
@@ -128,10 +143,11 @@ async function loginOpenCodeGo(
   };
   await store.updateWritingModel(preference);
 
-  const current = await store.readConfig();
-  if (!current.model) {
-    await store.updateModel(preference);
+  const mainUpdate = await synchronizeOpenCodeMainPreference(store, preference, supported);
+  if (mainUpdate === "initialized") {
     console.log("No main model was configured, so the selected OpenCode Go model will also run the coordinator and research subagents.");
+  } else if (mainUpdate === "replaced-stale") {
+    console.log("The previous OpenCode Go main model is no longer selectable, so the selected writing model will also run the coordinator and research subagents.");
   }
   return preference;
 }

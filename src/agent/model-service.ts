@@ -181,10 +181,7 @@ export class PiModelService {
 
   async listProviderModels(provider: string): Promise<SelectableModel[]> {
     const runtime = await this.runtimePromise;
-    const available = (await runtime.getAvailable(provider)).map(toSelectableModel);
-    if (provider !== "opencode-go") return available;
-    const current = new Set(await fetchOpenCodeGoModelIds());
-    return available.filter((model) => current.has(model.id));
+    return (await runtime.getAvailable(provider)).map(toSelectableModel);
   }
 
   async listCodexModels(): Promise<SelectableModel[]> {
