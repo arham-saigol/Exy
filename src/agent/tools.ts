@@ -149,7 +149,6 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
       candidateRef: Type.Optional(Type.String({ minLength: 1 })),
       post: Type.Optional(Type.String({ minLength: 1, maxLength: 500, description: "Direct X post ID or status URL when no Xquik candidateRef exists" })),
       rationale: Type.String({ minLength: 1, maxLength: 2000 }),
-      suggestedReply: Type.Optional(Type.String({ maxLength: 5000 })),
     }),
     execute: async (_id, input) => {
       if ((input.candidateRef === undefined) === (input.post === undefined)) {
@@ -159,7 +158,6 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
       const result = deps.stageReplyOpportunity({
         post: candidate?.postId ?? input.post!,
         rationale: input.rationale,
-        ...(input.suggestedReply === undefined ? {} : { suggestedReply: input.suggestedReply }),
         ...(candidate?.candidate === undefined ? {} : { candidate: candidate.candidate }),
       });
       if (result.status === "pending_delivery") {
@@ -178,8 +176,7 @@ export function createExyTools(deps: ExyToolDependencies): ToolDefinition[] {
         url: result.canonicalUrl,
         ...(candidate?.candidate === undefined ? {} : { candidate: candidate.candidate }),
         rationale: input.rationale,
-        ...(input.suggestedReply ? { suggestedReply: input.suggestedReply } : {}),
-        instruction: `${result.instruction} Include the exact returned canonical URL in the final response or it will not be recorded as presented.`,
+        instruction: `${result.instruction} Include the exact returned canonical URL in the final response or it will not be recorded as presented. Any reply copy must come from spawn_writing_subagent.`,
       });
     },
   });

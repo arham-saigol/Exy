@@ -1,6 +1,12 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { describe, expect, it } from "vitest";
-import { toSelectableModel, validatePreference } from "../../src/agent/model-service.js";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
+import { describe, expect, it, vi } from "vitest";
+import {
+  assertSuccessfulOpenCodeValidation,
+  PiModelService,
+  toSelectableModel,
+  validatePreference,
+} from "../../src/agent/model-service.js";
 
 function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
   return {
@@ -19,6 +25,39 @@ function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
 }
 
 describe("Pi model and reasoning selection", () => {
+  it("uses a Pi release whose native OpenCode Go catalog includes Kimi K3", () => {
+    expect(getBuiltinModel("opencode-go", "kimi-k3")).toMatchObject({
+      provider: "opencode-go",
+      id: "kimi-k3",
+      name: "Kimi K3",
+    });
+  });
+
+  it("uses Pi's bundled OpenCode Go catalog without a live catalog request", async () => {
+    const service = Object.create(PiModelService.prototype) as PiModelService;
+    const getAvailable = vi.fn(async () => [model({
+      provider: "opencode-go",
+      id: "kimi-k3",
+      name: "Kimi K3",
+    })]);
+    Object.defineProperty(service, "runtimePromise", { value: Promise.resolve({ getAvailable }) });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(service.listProviderModels("opencode-go"))
+      .resolves.toEqual([expect.objectContaining({ provider: "opencode-go", id: "kimi-k3" })]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("rejects provider error/abort results during OpenCode key validation", () => {
+    expect(() => assertSuccessfulOpenCodeValidation({
+      stopReason: "error",
+      errorMessage: "401: Invalid API key",
+    })).toThrow("401: Invalid API key");
+    expect(() => assertSuccessfulOpenCodeValidation({ stopReason: "aborted" })).toThrow(/aborted/u);
+    expect(() => assertSuccessfulOpenCodeValidation({ stopReason: "stop" })).not.toThrow();
+  });
+
   it("derives reasoning choices from Pi metadata, including holes", () => {
     const selectable = toSelectableModel(
       model({ thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null } }),

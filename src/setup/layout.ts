@@ -1,4 +1,4 @@
-import { chmod, copyFile, cp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExyPaths } from "../config/paths.js";
@@ -40,10 +40,19 @@ export async function ensureLayout(paths: ExyPaths): Promise<void> {
   }
   if (process.platform !== "win32") await chmod(paths.heartbeatFile, 0o600);
 
-  const bundledSkill = resolve(sourceRoot, ".agents", "skills", "exy-automation");
-  const installedSkill = resolve(paths.skillsDir, "exy-automation");
-  if ((await exists(bundledSkill)) && !(await exists(installedSkill))) {
-    await cp(bundledSkill, installedSkill, { recursive: true, errorOnExist: true });
+  const bundledSkills = resolve(sourceRoot, ".agents", "skills");
+  if (await exists(bundledSkills)) {
+    const entries = await readdir(bundledSkills, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const bundledSkill = resolve(bundledSkills, entry.name);
+      const installedSkill = resolve(paths.skillsDir, entry.name);
+      // Installed skills are user-managed. Add newly bundled skills without
+      // replacing local edits or upgrades made through the normal skill flow.
+      if (!(await exists(installedSkill))) {
+        await cp(bundledSkill, installedSkill, { recursive: true, errorOnExist: true });
+      }
+    }
   }
 }
 

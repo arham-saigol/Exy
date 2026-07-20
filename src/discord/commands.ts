@@ -11,7 +11,7 @@ export function buildDiscordApplicationCommands(): RESTPostAPIApplicationCommand
       .addStringOption((option) =>
         option
           .setName("model")
-          .setDescription("Model exposed by Pi for the configured Codex authentication")
+          .setDescription("Model exposed by Pi for the configured main provider")
           .setRequired(false)
           .setAutocomplete(true)
           .setMaxLength(100),

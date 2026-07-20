@@ -5,6 +5,8 @@ const TOOL_STATUSES: Readonly<Record<string, string>> = {
   fetch_web_page: "Reading a web page",
   search_memory: "Reviewing our past conversations",
   store_memory: "Saving this for later",
+  spawn_research_subagent: "Researching with a specialist",
+  spawn_writing_subagent: "Drafting with your writing specialist",
   save_x_draft: "Saving your X draft",
   publish_current_x_draft: "Publishing your X draft",
   inspect_x_account: "Looking at your X profile",

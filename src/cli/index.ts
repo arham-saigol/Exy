@@ -17,7 +17,7 @@ Usage: exy <command>
 
 Commands:
   setup       Configure providers, Discord, storage, and the Ubuntu service
-  login       Authenticate ChatGPT through Pi and select model/reasoning defaults
+  login       Configure OpenCode Go or ChatGPT/Codex through Pi
   start       Start the Exy gateway service
   stop        Stop the Exy gateway service
   restart     Restart the Exy gateway service

@@ -24,7 +24,10 @@ export interface ExyConfig {
   discord: DiscordConfig;
   providers: ProviderConfig;
   heartbeat: HeartbeatConfig;
+  /** Main coordinator model and reasoning configuration. */
   model?: ModelPreference;
+  /** OpenCode Go model used only by the writing subagent. */
+  writingModel?: ModelPreference;
 }
 
 export interface ExySecrets {

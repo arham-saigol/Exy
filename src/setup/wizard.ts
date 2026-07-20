@@ -222,6 +222,7 @@ export async function runSetup(paths: ExyPaths): Promise<void> {
     },
     heartbeat: heartbeatForSetup(previousConfig, discord, selectedAccountId),
     ...(previousConfig?.model ? { model: previousConfig.model } : {}),
+    ...(previousConfig?.writingModel ? { writingModel: previousConfig.writingModel } : {}),
   };
 
   await store.writeSecrets(secrets);
@@ -232,7 +233,7 @@ export async function runSetup(paths: ExyPaths): Promise<void> {
   console.log(`Configuration: ${paths.configFile}`);
   console.log(`Data:          ${paths.dataDir}`);
   const sudo = process.platform === "linux" ? "sudo " : "";
-  console.log(`Next authenticate ChatGPT and select a model: ${sudo}exy login`);
+  console.log(`Next configure Pi model providers:              ${sudo}exy login`);
   console.log(serviceWasActive
     ? `Apply the updated configuration:               ${sudo}exy restart`
     : `Then start the gateway:                     ${sudo}exy start`);

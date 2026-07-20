@@ -31,9 +31,10 @@ sudo exy doctor
 ```
 
 Doctor checks Node and host commands, configuration, restrictive secret permissions,
-writable data paths, refreshable Pi authentication, the persisted model/reasoning pair,
-provider and Discord connectivity, and systemd state. An intentionally stopped gateway
-is a warning; missing configuration, invalid credentials, or an inaccessible path is a
+writable data paths, refreshable Pi authentication, the persisted main model/reasoning pair,
+the configured OpenCode Go writing model, provider and Discord connectivity, and systemd
+state. An intentionally stopped gateway is a warning; missing configuration, invalid
+credentials, or an inaccessible path is a
 failure and produces a nonzero status.
 
 ## Publishing dry run
@@ -82,7 +83,7 @@ sudo tar --numeric-owner -C / -czf /root/exy-backup.tgz etc/exy var/lib/exy
 sudo exy start
 ```
 
-The archive contains provider and OAuth credentials. Protect it like a password vault,
+The archive contains provider API keys and OAuth credentials. Protect it like a password vault,
 encrypt it off-host, and do not commit it.
 
 To restore on a replacement host, install the same or a newer compatible Exy release,

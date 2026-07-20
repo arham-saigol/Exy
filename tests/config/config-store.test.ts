@@ -56,6 +56,23 @@ describe("ConfigStore", () => {
     });
   });
 
+  it("persists a separate OpenCode Go writing model", async () => {
+    const store = await makeStore();
+    await store.writeConfig(config);
+    await store.updateWritingModel({ provider: "opencode-go", modelId: "kimi-k3", reasoning: "high" });
+
+    expect((await new ConfigStore(store.paths).readConfig()).writingModel).toEqual({
+      provider: "opencode-go",
+      modelId: "kimi-k3",
+      reasoning: "high",
+    });
+    await expect(store.updateWritingModel({
+      provider: "openai-codex",
+      modelId: "not-a-writer",
+      reasoning: "medium",
+    })).rejects.toThrow(/Writing model provider must be OpenCode Go/u);
+  });
+
   it("stores secrets as mode 0600 without logging their values", async () => {
     const store = await makeStore();
     await store.writeSecrets(secrets);

@@ -98,8 +98,16 @@ export async function runGateway(paths: ExyPaths): Promise<number> {
   if (!xAccountId) throw new Error("No connected Zernio X account is configured; rerun exy setup");
 
   const modelService = new PiModelService(paths.piAuthFile);
-  if (!(await modelService.validateCodexAuthentication())) throw new Error("Pi authentication is unavailable; run exy login");
-  modelService.resolvePreference(config.model);
+  if (!(await modelService.validateAuthentication(config.model.provider))) {
+    throw new Error(`Pi authentication for ${config.model.provider} is unavailable; run exy login`);
+  }
+  await modelService.resolvePreference(config.model);
+  if (config.writingModel) {
+    if (!(await modelService.validateAuthentication("opencode-go"))) {
+      throw new Error("OpenCode Go authentication for the writing subagent is unavailable; run exy login");
+    }
+    await modelService.resolveWritingPreference(config.writingModel);
+  }
 
   const database = new ExyDatabase(paths.databaseFile);
   const threads = new DiscordThreadRepository(database);

@@ -51,6 +51,12 @@ export function validateConfig(value: unknown): ExyConfig {
     throw new ConfigurationError("Enabled heartbeat requires a delivery thread ID");
   }
   if (config.model) validateModelPreference(config.model);
+  if (config.writingModel) {
+    const writingModel = validateModelPreference(config.writingModel);
+    if (writingModel.provider !== "opencode-go") {
+      throw new ConfigurationError("Writing model provider must be OpenCode Go");
+    }
+  }
   return config as ExyConfig;
 }
 
@@ -132,6 +138,14 @@ export class ConfigStore {
 
   async updateModel(model: ModelPreference): Promise<ExyConfig> {
     return this.updateConfig((config) => ({ ...config, model: validateModelPreference(model) }));
+  }
+
+  async updateWritingModel(model: ModelPreference): Promise<ExyConfig> {
+    const preference = validateModelPreference(model);
+    if (preference.provider !== "opencode-go") {
+      throw new ConfigurationError("Writing model provider must be OpenCode Go");
+    }
+    return this.updateConfig((config) => ({ ...config, writingModel: preference }));
   }
 
   async updateConfig(update: (current: ExyConfig) => ExyConfig): Promise<ExyConfig> {

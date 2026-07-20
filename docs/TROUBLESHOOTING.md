@@ -47,8 +47,10 @@ sudo exy login
 sudo exy start
 ```
 
-Complete the displayed device-code flow before it expires. If Pi reports a credential
-lock failure after a crash, inspect `/var/lib/exy/pi-agent/auth.json.lock` while the
+For ChatGPT/Codex, complete the displayed device-code flow before it expires. For
+OpenCode Go, recheck the key/subscription if validation fails; the submitted key is
+redacted from diagnostics. If Pi reports a credential lock failure after a crash, inspect
+`/var/lib/exy/pi-agent/auth.json.lock` while the
 service is stopped. A normal Pi lock is temporary; do not delete an active lock. If the
 path is a stale malformed regular file rather than Pi's lock directory, move that single
 path aside and rerun login. Never print or hand-edit `auth.json`.
@@ -63,6 +65,13 @@ is stale. Exy intentionally does not probe every model because that would consum
 
 If a reasoning value becomes invalid after changing models, `/model` selects a valid
 default reported by Pi. `/reasoning` shows only the selected model's supported levels.
+
+## Writing subagent is unavailable
+
+Run `sudo exy login`, choose **OpenCode Go**, and select a current model. Login marks Kimi
+K3 as recommended when the provider and installed Pi release expose it. If a previously
+selected model disappeared, Exy refuses to fall back silently and asks for a replacement.
+Provider models displayed as unavailable require an Exy/Pi upgrade before they can be used.
 
 ## No Discord response
 

@@ -31,8 +31,8 @@
     "start": "node dist/cli/index.js gateway"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.80.6",
-    "@earendil-works/pi-coding-agent": "0.80.6",
+    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.80.10",
     "@inquirer/prompts": "8.5.2",
     "croner": "10.0.1",
     "discord.js": "14.26.5",
